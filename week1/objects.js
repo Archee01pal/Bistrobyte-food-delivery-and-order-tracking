@@ -96,7 +96,7 @@ const company={
         street:"xyz ward 2",
         city:"pune",
         pincode:"411066"
-    },    departments:{
+    }    departments:{
         engineering:{
             role:"Software intern",
             teamcount:12
