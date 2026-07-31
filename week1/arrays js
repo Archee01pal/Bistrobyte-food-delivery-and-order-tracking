@@ -1,0 +1,84 @@
+//arrays creation and indexing
+let marks=[34,87,94,78];
+console.log(marks);
+marks[1]=90;
+console.log(marks);
+
+//push,pop,concat,shift,unshift,       push adds t item to the end of the string
+let veggies=['tomato','onion','carrot'];
+console.log(veggies);
+veggies.push("chips");
+console.log(veggies);
+
+//pop
+veggies.pop();
+console.log(veggies);
+
+//concat(to add two strings or arrays together)
+let veggies=['tomato','onion','carrot'];
+let fruits=["apple","banana","mango"];
+let eating=veggies.concat(fruits);
+console.log(eating);
+
+//unshift, adds the item to the front of the string, like push but at the front
+veggies.unshift("potato");
+console.log(veggies);
+
+//shift, deletes the first item of the array, like pop but at the front
+veggies.shift();
+console.log(veggies);
+
+//find, finds the item in the array or list
+let arr=[1,2,3,4,5];
+let found=arr.find(el=el%2==0);
+console.log(found);
+
+//filter, filters the array based on the condition
+let arr=[1,2,3,4,5];
+let filtered=arr.filter(el=el%2==0);
+console.log(filtered);
+
+//slice, acts like a slice of cake, it takes a part between two items in an array
+let marks=[23,45,67,82,93,12];
+let markks=marks.slice(2,5);
+console.log(markks);
+
+//splice, select which element, then jitna tak remove karna hai uske bd agr koi aur element add karna ho toh uski jgh
+let companies=["google","microsoft","apple","facebook"];
+companies.splice(1,1,"amazon");  //here microsoft 1 number pe h toh woh remove hokr amazon add hojyega, similarly agar 1,2 likhenge toh microsoft and apple remove hojyenge aur amazon add hojyega
+console.log(companies);
+
+//for method, two types for in and for of, for in is used to iterate over the index of the array, for of is used to iterate over the values of the array
+let arr=[1,2,3,4,5];
+for(let i in arr){
+    console.log(i);  //this will print the index of the array
+}
+for(let i of arr){
+    console.log(i);  //this will print the values of the array
+}
+
+//foreach()
+arr.forEach((el, i) => {
+    console.log(el, i);  //this will print the values and indices of the array
+}); 
+
+//The map() method creates a new array by performing a function on each array element.
+//The map() method does not execute the function for array elements without values.
+//The map() method does not change the original array.
+const num1=[2,4,6,8];
+const num2=num1.map(myfunction);
+function myfunction(value){
+    return value*3
+}
+console.log(num2);
+
+//reduce() method executes a reducer function (that you provide) on each element of the array, resulting in a single output value.
+const numbers = [45, 4, 9, 16, 25];
+let sum = numbers.reduce(myFunction);
+
+function myFunction(total, value) {
+  return total + value;
+}
+console.log(sum);
+
+//every keyword is used to make sure every phrase is included in the function
