@@ -41,7 +41,7 @@ const vehicle={
 const keys=Object.keys(vehicle);
 console.log(keys);
 
-//object has its own properties,checks whether the obj ahs own properties
+//object has its own properties,checks whether the obj has own properties
 //not inherited
 const books={
     title:"Da vinci code",
