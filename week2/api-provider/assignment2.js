@@ -27,7 +27,7 @@ async function getDataAsync(){
     console.log(message);
 };
 
-//Event loop que using console log, setTimeout, promise.then.resolve()
+//Event loop que using console log, setTimeout, promise.resolve().then
 console.log("one");
 setTimeout(()=>{
     console.log("third");
