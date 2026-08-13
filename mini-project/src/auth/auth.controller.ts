@@ -1,7 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { SignupDto } from './dto/signup.dto';
-import { LoginDto } from './dto/login.dto';
+import { SignupDto } from './dto/dto.signup';
+import { LoginDto } from './dto/dto.login';
 
 @Controller('auth') // Resource route (Level 1 Maturity)
 export class AuthController {
