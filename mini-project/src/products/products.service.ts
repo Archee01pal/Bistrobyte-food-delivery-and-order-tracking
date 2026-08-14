@@ -1,166 +1,133 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { SearchProductsDto } from './dto/search-product.dto';
-
-export interface Product {
-  id: string;
-  name: string;
-  price: number;
-  city: string;
-  description?: string;
-  imageUrl?: string;
-}
-
-export interface FavoriteRecord {
-  userId: string;
-  productIds: string[];
-}
+import { Product, Cart, CartItem } from './products.model';
 
 @Injectable()
 export class ProductsService {
-  // In-memory products database (Accumulated Days 4-7)
   private products: Product[] = [
-    { id: '1', name: 'Wireless Mouse', price: 25, city: 'New York', description: 'Ergonomic mouse', imageUrl: 'uploads/mouse.jpg' },
-    { id: '2', name: 'Mechanical Keyboard', price: 75, city: 'San Francisco', description: 'RGB Keyboard', imageUrl: '' },
-    { id: '3', name: 'Gaming Monitor', price: 200, city: 'New York', description: '144Hz Monitor', imageUrl: '' },
-    { id: '4', name: 'Laptop Stand', price: 15, city: 'Los Angeles', description: 'Aluminum stand', imageUrl: '' },
+    { id: '1', title: 'Wireless Mouse', description: 'Ergonomic 2.4GHz mouse', price: 29.99 },
+    { id: '2', title: 'Mechanical Keyboard', description: 'RGB tactile switches', price: 89.99 },
   ];
 
-  // DAY 08: In-memory Favorites database schema keyed by User ID
-  private favorites: FavoriteRecord[] = [];
+  // Day 08 Data Stores
+  private userFavorites: Map<string, Set<string>> = new Map();
 
-  // DAY 07: Get All Products with Search, Filter, and Sort
-  findAll(query: SearchProductsDto): Product[] {
-    let filteredProducts = [...this.products];
-    const { name, city, maxPrice, sortBy, sortOrder } = query;
+  // DAY 09: In-Memory Shopping Carts Data Store
+  private userCarts: Map<string, Cart> = new Map();
 
-    if (name) {
-      filteredProducts = filteredProducts.filter(product =>
-        product.name.toLowerCase().includes(name.toLowerCase())
+  // Existing Day 3-7 CRUD & Search Methods
+  findAll(search?: string, minPrice?: number, maxPrice?: number): Product[] {
+    let filtered = [...this.products];
+    if (search) {
+      filtered = filtered.filter(p => 
+        p.title.toLowerCase().includes(search.toLowerCase()) || 
+        p.description.toLowerCase().includes(search.toLowerCase())
       );
     }
-
-    if (city) {
-      filteredProducts = filteredProducts.filter(product =>
-        product.city.toLowerCase().includes(city.toLowerCase())
-      );
-    }
-
-    if (maxPrice) {
-      const limit = parseFloat(maxPrice);
-      filteredProducts = filteredProducts.filter(product => product.price < limit);
-    }
-
-    if (sortBy) {
-      filteredProducts.sort((a, b) => {
-        let valA = a[sortBy];
-        let valB = b[sortBy];
-
-        if (typeof valA === 'string') {
-          valA = valA.toLowerCase();
-          valB = (valB as string).toLowerCase();
-        }
-
-        if (valA < valB) return sortOrder === 'desc' ? 1 : -1;
-        if (valA > valB) return sortOrder === 'desc' ? -1 : 1;
-        return 0;
-      });
-    }
-
-    return filteredProducts;
+    if (minPrice !== undefined) filtered = filtered.filter(p => p.price >= minPrice);
+    if (maxPrice !== undefined) filtered = filtered.filter(p => p.price <= maxPrice);
+    return filtered;
   }
 
-  // DAY 04: Get Product By ID
   findOne(id: string): Product {
     const product = this.products.find(p => p.id === id);
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
+    if (!product) throw new NotFoundException(`Product with ID "${id}" not found.`);
     return product;
   }
 
-  // DAY 04: Delete Product from Main Catalog
-  remove(id: string): { deleted: boolean } {
-    const initialLength = this.products.length;
-    this.products = this.products.filter(p => p.id !== id);
-    if (this.products.length === initialLength) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-    
-    // Also remove this product from all user favorite records cleanly
-    this.favorites = this.favorites.map(f => ({
-      ...f,
-      productIds: f.productIds.filter(pId => pId !== id),
-    }));
-
-    return { deleted: true };
+  create(title: string, description: string, price: number): Product {
+    const newProduct: Product = { id: Date.now().toString(), title, description, price };
+    this.products.push(newProduct);
+    return newProduct;
   }
 
-  // DAY 06: Update Product Image URL
   updateImage(id: string, imageUrl: string): Product {
     const product = this.findOne(id);
     product.imageUrl = imageUrl;
     return product;
   }
 
-  // ==========================================
-  // DAY 08: FAVORITE PRODUCTS FEATURES
-  // ==========================================
-
-  // Mark a product as favorite for a specific logged-in user
-  markAsFavorite(userId: string, productId: string): { message: string; favorites: string[] } {
-    // 1. Verify product exists in catalog first
-    this.findOne(productId);
-
-    let userFav = this.favorites.find(f => f.userId === userId);
-
-    if (!userFav) {
-      userFav = { userId, productIds: [] };
-      this.favorites.push(userFav);
+  // Day 08: Favorites Management
+  toggleFavorite(userId: string, productId: string): string[] {
+    this.findOne(productId); // Verifies product exists
+    if (!this.userFavorites.has(userId)) {
+      this.userFavorites.set(userId, new Set());
     }
-
-    // Prevent adding duplicate entries
-    if (userFav.productIds.includes(productId)) {
-      throw new BadRequestException('Product is already in your favorites list');
-    }
-
-    userFav.productIds.push(productId);
-    return {
-      message: 'Product added to favorites successfully',
-      favorites: userFav.productIds,
-    };
-  }
-
-  // Fetch all favorite product items for a logged-in user
-  getFavorites(userId: string): Product[] {
-    const userFav = this.favorites.find(f => f.userId === userId);
-    if (!userFav || userFav.productIds.length === 0) {
-      return [];
-    }
-    // Map the array of string IDs back to the actual structural product objects
-    return this.products.filter(product => userFav.productIds.includes(product.id));
-  }
-
-  // Delete favorite products (removes specific ID or drops all if no ID passed)
-  removeFavorites(userId: string, productId?: string): { message: string } {
-    const userFav = this.favorites.find(f => f.userId === userId);
-    
-    if (!userFav) {
-      throw new NotFoundException('No favorites record found for this user');
-    }
-
-    if (productId) {
-      // Remove specific target favorite product
-      const initialLength = userFav.productIds.length;
-      userFav.productIds = userFav.productIds.filter(id => id !== productId);
-      
-      if (userFav.productIds.length === initialLength) {
-        throw new NotFoundException(`Product with ID ${productId} not found in your favorites`);
-      }
-      return { message: `Product ${productId} removed from your favorites list` };
+    const favorites = this.userFavorites.get(userId)!;
+    if (favorites.has(productId)) {
+      favorites.delete(productId);
     } else {
-      // Remove ALL favorites for this user
-      userFav.productIds = [];
-      return { message: 'All products removed from your favorites list' };
+      favorites.add(productId);
     }
+    return Array.from(favorites);
+  }
+
+  getFavorites(userId: string): Product[] {
+    const favoriteIds = this.userFavorites.get(userId);
+    if (!favoriteIds) return [];
+    return this.products.filter(p => favoriteIds.has(p.id));
+  }
+
+  // =========================================================================
+  // DAY 09: SHOPPING CART CORE BUSINESS LOGIC
+  // =========================================================================
+  
+  // Helper to fetch or initialize an empty cart for a session
+  private getOrCreateCart(userId: string): Cart {
+    if (!this.userCarts.has(userId)) {
+      this.userCarts.set(userId, {
+        userId,
+        items: [],
+        totalItems: 0,
+        totalPrice: 0,
+      });
+    }
+    return this.userCarts.get(userId)!;
+  }
+
+  // Helper to recalculate totals dynamically on mutations
+  private recalculateCartTotals(cart: Cart): void {
+    cart.totalItems = cart.items.reduce((acc, item) => acc + item.quantity, 0);
+    cart.totalPrice = Number(
+      cart.items.reduce((acc, item) => acc + item.product.price * item.quantity, 0).toFixed(2)
+    );
+  }
+
+  getCart(userId: string): Cart {
+    return this.getOrCreateCart(userId);
+  }
+
+  addToCart(userId: string, productId: string, quantity: number): Cart {
+    if (quantity <= 0) throw new BadRequestException('Quantity must be greater than 0');
+    const product = this.findOne(productId); // Throws 404 if product doesn't exist
+    const cart = this.getOrCreateCart(userId);
+
+    const existingItem = cart.items.find(item => item.product.id === productId);
+    if (existingItem) {
+      existingItem.quantity += quantity;
+    } else {
+      cart.items.push({ product, quantity });
+    }
+
+    this.recalculateCartTotals(cart);
+    return cart;
+  }
+
+  updateCartItem(userId: string, productId: string, quantity: number): Cart {
+    const cart = this.getOrCreateCart(userId);
+    const itemIndex = cart.items.findIndex(item => item.product.id === productId);
+
+    if (itemIndex === -1) {
+      throw new NotFoundException(`Product with ID "${productId}" is not in your cart.`);
+    }
+
+    if (quantity <= 0) {
+      // If quantity drops to 0 or negative, wipe item from cart array completely
+      cart.items.splice(itemIndex, 1);
+    } else {
+      cart.items[itemIndex].quantity = quantity;
+    }
+
+    this.recalculateCartTotals(cart);
+    return cart;
   }
 }

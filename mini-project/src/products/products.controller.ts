@@ -1,117 +1,108 @@
 import { 
-  Controller, 
-  Get, 
-  Post, 
-  Delete, 
-  Param, 
-  Query, 
-  Headers, 
-  UnauthorizedException, 
-  BadRequestException, 
-  UseInterceptors, 
-  UploadedFile, 
-  ValidationPipe 
+  Controller, Get, Post, Patch, Param, Body, Query, UseInterceptors, UploadedFile, Headers, UnauthorizedException 
 } from '@nestjs/common';
+import { ProductsService } from './products.service';
+import { Product, Cart } from './products.model';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Express } from 'express';
-import { ProductsService, Product } from './products.service';
-import { SearchProductsDto } from './dto/search-product.dto';
-import { diskStorage, Multer } from 'multer';
+import { diskStorage } from 'multer';
 import { extname } from 'path';
+import * as Express from 'express';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  // DAY 07: Get All Products with Sorting, Searching, and Filtering
-  @Get()
-  getAllProducts(@Query(new ValidationPipe({ transform: true })) query: SearchProductsDto): Product[] {
-    return this.productsService.findAll(query);
+  // Helper validation to shield endpoints from anonymous mutations
+  private verifySession(userId: string): string {
+    if (!userId) {
+      throw new UnauthorizedException('Access Denied: Missing "x-user-id" session identification header.');
+    }
+    return userId;
   }
 
-  // ==========================================
-  // DAY 08: FAVORITE ROUTES (REQUIRES HEADERS)
-  // ==========================================
+  // --- DAY 03 - 07 Endpoints ---
+  @Get()
+  getAll(
+    @Query('search') search?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
+  ): Product[] {
+    return this.productsService.findAll(
+      search,
+      minPrice ? parseFloat(minPrice) : undefined,
+      maxPrice ? parseFloat(maxPrice) : undefined,
+    );
+  }
 
-  // Fetch logged-in user's favorite product objects
   @Get('favorites')
-  getUserFavorites(@Headers('x-user-id') userId: string): Product[] {
-    this.validateUserSession(userId);
+  getFavorites(@Headers('x-user-id') userId: string): Product[] {
+    this.verifySession(userId);
     return this.productsService.getFavorites(userId);
   }
 
-  // Add a product to the user's personal favorites array
-  @Post(':id/favorite')
-  addToFavorites(
-    @Headers('x-user-id') userId: string,
-    @Param('id') productId: string
-  ) {
-    this.validateUserSession(userId);
-    return this.productsService.markAsFavorite(userId, productId);
-  }
-
-  // Remove ALL favorites from a user's record
-  @Delete('favorites/clear-all')
-  clearAllFavorites(@Headers('x-user-id') userId: string) {
-    this.validateUserSession(userId);
-    return this.productsService.removeFavorites(userId);
-  }
-
-  // Remove ONE specific product from favorites list
-  @Delete(':id/favorite')
-  removeSingleFavorite(
-    @Headers('x-user-id') userId: string,
-    @Param('id') productId: string
-  ) {
-    this.validateUserSession(userId);
-    return this.productsService.removeFavorites(userId, productId);
-  }
-
-  // ==========================================
-  // CONTINUOUS DAY 04 & 06 BASE ROUTES
-  // ==========================================
-
-  // DAY 04: Get Single Product by ID
   @Get(':id')
-  getProductById(@Param('id') id: string): Product {
+  getOne(@Param('id') id: string): Product {
     return this.productsService.findOne(id);
   }
 
-  // DAY 04: Delete Product from Catalog
-  @Delete(':id')
-  deleteProduct(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  @Post()
+  createProduct(
+    @Body('title') title: string,
+    @Body('description') description: string,
+    @Body('price') price: number,
+  ): Product {
+    return this.productsService.create(title, description, price);
   }
 
-  // DAY 06: File Upload Engine for Product Images
   @Post(':id/upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        // FIX: Using a callback function prevents multer from trying to run mkdir on a folder that already exists
-        destination: (req, file, callback) => {
-          callback(null, './uploads');
-        },
+        destination: (req, file, callback) => callback(null, './uploads'),
         filename: (req, file, callback) => {
           const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          callback(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+          callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
         },
       }),
     }),
   )
-  uploadProductImage(
-    @Param('id') id: string, 
-    @UploadedFile() file: Express.Multer.File
-  ): Product {
-    const fileUrl = `uploads/${file.filename}`;
-    return this.productsService.updateImage(id, fileUrl);
+  uploadProductImage(@Param('id') id: string, @UploadedFile() file: Express.Multer.File): Product {
+    return this.productsService.updateImage(id, `uploads/${file.filename}`);
   }
 
-  // Helper validation utility simulating logged-in guard conditions
-  private validateUserSession(userId: string): void {
-    if (!userId || userId.trim() === '') {
-      throw new UnauthorizedException('Access Denied: Missing "x-user-id" session identification header.');
-    }
+  @Post(':id/favorite')
+  toggleProductFavorite(@Param('id') id: string, @Headers('x-user-id') userId: string): string[] {
+    this.verifySession(userId);
+    return this.productsService.toggleFavorite(userId, id);
+  }
+
+  // =========================================================================
+  // DAY 09: SHOPPING CART APP GATEWAYS
+  // =========================================================================
+
+  @Get('cart/view')
+  viewCart(@Headers('x-user-id') userId: string): Cart {
+    this.verifySession(userId);
+    return this.productsService.getCart(userId);
+  }
+
+  @Post('cart/add')
+  addItemToCart(
+    @Headers('x-user-id') userId: string,
+    @Body('productId') productId: string,
+    @Body('quantity') quantity: number,
+  ): Cart {
+    this.verifySession(userId);
+    return this.productsService.addToCart(userId, productId, quantity || 1);
+  }
+
+  @Patch('cart/update')
+  modifyItemQuantity(
+    @Headers('x-user-id') userId: string,
+    @Body('productId') productId: string,
+    @Body('quantity') quantity: number,
+  ): Cart {
+    this.verifySession(userId);
+    return this.productsService.updateCartItem(userId, productId, quantity);
   }
 }
