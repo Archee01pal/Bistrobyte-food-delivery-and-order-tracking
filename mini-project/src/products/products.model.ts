@@ -6,7 +6,6 @@ export interface Product {
   imageUrl?: string;
 }
 
-// DAY 09: Shopping Cart StructuralBlueprints
 export interface CartItem {
   product: Product;
   quantity: number;
@@ -17,4 +16,14 @@ export interface Cart {
   items: CartItem[];
   totalItems: number;
   totalPrice: number;
+}
+
+// DAY 10: PRODUCT REVIEW MODELS
+export interface Review {
+  id: string;
+  productId: string;
+  userId: string;
+  comment: string;
+  rating: number;
+  createdAt: Date;
 }

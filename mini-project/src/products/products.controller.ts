@@ -1,18 +1,19 @@
 import { 
-  Controller, Get, Post, Patch, Param, Body, Query, UseInterceptors, UploadedFile, Headers, UnauthorizedException 
+  Controller, Get, Post, Put, Delete, Param, Body, Query, UseInterceptors, UploadedFile, Headers, UnauthorizedException, ValidationPipe 
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { Product, Cart } from './products.model';
+import { Product, Cart, Review } from './products.model';
+import { SearchProductsDto } from './dto/search-product.dto';
+import { ReviewProductDto } from './dto/review-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, type Multer } from 'multer';
 import { extname } from 'path';
-import * as Express from 'express';
+import type { Request, Express } from 'express';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  // Helper validation to shield endpoints from anonymous mutations
   private verifySession(userId: string): string {
     if (!userId) {
       throw new UnauthorizedException('Access Denied: Missing "x-user-id" session identification header.');
@@ -20,18 +21,9 @@ export class ProductsController {
     return userId;
   }
 
-  // --- DAY 03 - 07 Endpoints ---
   @Get()
-  getAll(
-    @Query('search') search?: string,
-    @Query('minPrice') minPrice?: string,
-    @Query('maxPrice') maxPrice?: string,
-  ): Product[] {
-    return this.productsService.findAll(
-      search,
-      minPrice ? parseFloat(minPrice) : undefined,
-      maxPrice ? parseFloat(maxPrice) : undefined,
-    );
+  getAll(@Query(new ValidationPipe({ transform: true })) query: SearchProductsDto): Product[] {
+    return this.productsService.findAll(query);
   }
 
   @Get('favorites')
@@ -76,10 +68,6 @@ export class ProductsController {
     return this.productsService.toggleFavorite(userId, id);
   }
 
-  // =========================================================================
-  // DAY 09: SHOPPING CART APP GATEWAYS
-  // =========================================================================
-
   @Get('cart/view')
   viewCart(@Headers('x-user-id') userId: string): Cart {
     this.verifySession(userId);
@@ -96,7 +84,7 @@ export class ProductsController {
     return this.productsService.addToCart(userId, productId, quantity || 1);
   }
 
-  @Patch('cart/update')
+  @Post('cart/update')
   modifyItemQuantity(
     @Headers('x-user-id') userId: string,
     @Body('productId') productId: string,
@@ -104,5 +92,39 @@ export class ProductsController {
   ): Cart {
     this.verifySession(userId);
     return this.productsService.updateCartItem(userId, productId, quantity);
+  }
+
+  @Get(':productId/reviews')
+  getProductReviews(@Param('productId') productId: string): Review[] {
+    return this.productsService.getReviewsByProduct(productId);
+  }
+
+  @Post(':productId/reviews')
+  createReview(
+    @Headers('x-user-id') userId: string,
+    @Param('productId') productId: string,
+    @Body(new ValidationPipe()) reviewDto: ReviewProductDto,
+  ): Review {
+    this.verifySession(userId);
+    return this.productsService.submitReview(userId, productId, reviewDto);
+  }
+
+  @Put('reviews/:reviewId')
+  editReview(
+    @Headers('x-user-id') userId: string,
+    @Param('reviewId') reviewId: string,
+    @Body(new ValidationPipe()) reviewDto: ReviewProductDto,
+  ): Review {
+    this.verifySession(userId);
+    return this.productsService.updateReview(userId, reviewId, reviewDto);
+  }
+
+  @Delete('reviews/:reviewId')
+  removeReview(
+    @Headers('x-user-id') userId: string,
+    @Param('reviewId') reviewId: string,
+  ) {
+    this.verifySession(userId);
+    return this.productsService.deleteReview(userId, reviewId);
   }
 }
