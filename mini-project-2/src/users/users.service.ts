@@ -1,37 +1,61 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Buffer } from 'buffer';
-import * as fs from 'fs';
-import * as path from 'path';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { GetUsersQueryDto } from './dto/get-users-query.dto';
 
 export interface UserProfile {
-  userId: string;
+  id: string;
   name: string;
   email: string;
-  profilePictureUrl?: string;
+  role: 'admin' | 'user';
+  status: 'active' | 'inactive';
   updatedAt: Date;
 }
 
 @Injectable()
 export class UsersService {
-  // In-memory persistent database layer for profile records
-  private profilesTable: Map<string, UserProfile> = new Map();
-  private readonly storageDirectory = path.join(process.cwd(), 'uploads');
+  // Seeding our internal table with initial testing records
+  private profilesTable: Map<string, UserProfile> = new Map([
+    ['usr_1', { id: 'usr_1', name: 'Alice Smith', email: 'alice@domain.com', role: 'admin', status: 'active', updatedAt: new Date() }],
+    ['usr_2', { id: 'usr_2', name: 'Bob Jones', email: 'bob@test.com', role: 'user', status: 'active', updatedAt: new Date() }],
+    ['usr_3', { id: 'usr_3', name: 'Charlie Brown', email: 'charlie@domain.com', role: 'user', status: 'inactive', updatedAt: new Date() }],
+  ]);
 
-  constructor() {
-    // Self-healing bootstrap block: guarantees the upload folder exists on startup
-    if (!fs.existsSync(this.storageDirectory)) {
-      fs.mkdirSync(this.storageDirectory, { recursive: true });
+  findAll(query: GetUsersQueryDto): UserProfile[] {
+    let users = Array.from(this.profilesTable.values());
+
+    // 1. Filter by Role
+    if (query.role) {
+      users = users.filter(user => user.role === query.role);
     }
-  }
 
-  initializeProfile(userId: string, name: string, email: string): void {
-    this.profilesTable.set(userId, {
-      userId,
-      name,
-      email,
-      profilePictureUrl: null,
-      updatedAt: new Date()
+    // 2. Filter by Status
+    if (query.status) {
+      users = users.filter(user => user.status === query.status);
+    }
+
+    // 3. Search by Name or Email (Case-Insensitive)
+    if (query.search) {
+      const searchLower = query.search.toLowerCase();
+      users = users.filter(
+        user =>
+          user.name.toLowerCase().includes(searchLower) ||
+          user.email.toLowerCase().includes(searchLower),
+      );
+    }
+
+    // 4. Dynamic Sorting (by Name or Email)
+    const sortBy = query.sortBy || 'name';
+    const sortOrder = query.sortOrder || 'asc';
+
+    users.sort((a, b) => {
+      const fieldA = a[sortBy].toLowerCase();
+      const fieldB = b[sortBy].toLowerCase();
+
+      if (fieldA < fieldB) return sortOrder === 'asc' ? -1 : 1;
+      if (fieldA > fieldB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
     });
+
+    return users;
   }
 
   fetchProfile(userId: string): UserProfile {
@@ -39,41 +63,6 @@ export class UsersService {
     if (!profile) {
       throw new NotFoundException('The requested user account profile does not exist in the active registry.');
     }
-    return profile;
-  }
-
-  updateProfile(userId: string, name: string, base64Payload?: string): UserProfile {
-    const profile = this.fetchProfile(userId);
-    profile.name = name;
-    profile.updatedAt = new Date();
-
-    if (base64Payload) {
-      try {
-        // Strip out metadata headers if present (e.g., "data:image/jpeg;base64,")
-        const matchData = base64Payload.match(/^data:image\/([a-zA-Z]*);base64,(.*)$/);
-        let extension = 'png';
-        let rawBase64Data = base64Payload;
-
-        if (matchData) {
-          extension = matchData[1];
-          rawBase64Data = matchData[2];
-        }
-
-        // Convert the base64 string stream into a standard binary image buffer block
-        const imageBuffer = Buffer.from(rawBase64Data, 'base64');
-        const filename = `avatar-${userId}-${Date.now()}.${extension}`;
-        const destinationPath = path.join(this.storageDirectory, filename);
-
-        // Commit file stream write out directly to our filesystem folder
-        fs.writeFileSync(destinationPath, imageBuffer);
-        profile.profilePictureUrl = `uploads/${filename}`;
-
-      } catch (error) {
-        throw new BadRequestException('Malformed Base64 string encoding detected. Image conversion aborted.');
-      }
-    }
-
-    this.profilesTable.set(userId, profile);
     return profile;
   }
 }
