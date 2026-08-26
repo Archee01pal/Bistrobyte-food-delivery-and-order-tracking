@@ -10,12 +10,12 @@
     "sourceMap": true,
     "rootDir": "./src",
     "outDir": "./dist",
-    "incremental": true,
+       "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": false
   }
 }
