@@ -17,7 +17,7 @@ export interface EventRecord {
 export class EventsService {
   private eventsTable: Map<string, EventRecord> = new Map([
     ['evt_1', { id: 'evt_1', name: 'Tech Conference 2026', location: 'New York', category: 'Tech', date: new Date('2026-09-15'), price: 299, popularity: 95, totalTickets: 100, ticketsBooked: 98 }],
-    ['evt_2', { id: 'evt_2', name: 'Rock Concert Spectacular', location: 'Los Angeles', category: 'Music', date: new Date('2026-10-20'), price: 85, popularity: 120, totalTickets: 500, ticketsBooked: 150 }],
+    ['evt_2', { id: 'evt_2', name: 'Rock Concert', location: 'Los Angeles', category: 'Music', date: new Date('2026-10-20'), price: 85, popularity: 120, totalTickets: 500, ticketsBooked: 150 }],
     ['evt_3', { id: 'evt_3', name: 'Art Gallery Opening', location: 'New York', category: 'Art', date: new Date('2026-08-30'), price: 0, popularity: 40, totalTickets: 50, ticketsBooked: 50 }],
   ]);
 

@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Param, Patch, Query, Delete, BadRequestException } from '@nestjs/common';
-import { BookingsService, BookingRecord } from './bookings.service';
+import { BookingsService, BookingRecord, ReviewRecord } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
+import { CreateReviewDto } from './dto/create-review.dto';
+import { UpdateReviewDto } from './dto/update-review.dto';
 
 @Controller()
 export class BookingsController {
@@ -24,18 +26,12 @@ export class BookingsController {
 
   // --- Day 07: Attendee Controls ---
   @Get('events/:eventId/attendees')
-  getEventAttendees(
-    @Param('eventId') eventId: string,
-    @Query('status') status?: string,
-  ) {
+  getEventAttendees(@Param('eventId') eventId: string, @Query('status') status?: string) {
     return this.bookingsService.getAttendeesForEvent(eventId, status);
   }
 
   @Patch('bookings/:bookingId/checkin')
-  markAttendance(
-    @Param('bookingId') bookingId: string,
-    @Body('checkedIn') checkedIn: boolean,
-  ) {
+  markAttendance(@Param('bookingId') bookingId: string, @Body('checkedIn') checkedIn: boolean) {
     if (typeof checkedIn !== 'boolean') {
       throw new BadRequestException('checkedIn body attribute must be explicit boolean value.');
     }
@@ -56,5 +52,40 @@ export class BookingsController {
   @Get('users/:userId/favorites')
   getFavorites(@Param('userId') userId: string) {
     return this.bookingsService.getUserFavorites(userId);
+  }
+
+  // --- Day 09: Cancellations & Refunds ---
+  @Patch('bookings/:id/cancel')
+  cancelBooking(@Param('id') id: string) {
+    return this.bookingsService.cancelBookingByUser(id);
+  }
+
+  @Patch('bookings/:id/refund')
+  refundBooking(@Param('id') id: string) {
+    return this.bookingsService.processAdminRefund(id);
+  }
+
+  // --- Day 10: Reviews & Ratings ---
+  @Post('reviews')
+  submitReview(@Body() dto: CreateReviewDto): ReviewRecord {
+    return this.bookingsService.createReview(dto);
+  }
+
+  @Patch('reviews/:id')
+  editReview(@Param('id') id: string, @Body() dto: UpdateReviewDto): ReviewRecord {
+    return this.bookingsService.updateReview(id, dto);
+  }
+
+  @Delete('reviews/:id')
+  removeReview(@Param('id') id: string) {
+    return this.bookingsService.deleteReview(id);
+  }
+
+  @Get('events/:eventId/reviews')
+  getEventReviews(
+    @Param('eventId') eventId: string,
+    @Query('sortBy') sortBy?: 'rating' | 'date',
+  ): ReviewRecord[] {
+    return this.bookingsService.getReviewsForEvent(eventId, sortBy);
   }
 }

@@ -10,4 +10,13 @@ export class MailService {
     console.log(`Message: Your order for ${bookingDetails.ticketCount} ticket(s) is CONFIRMED.`);
     console.log(`---------------------------------------------------------`);
   }
+
+  async sendCancellationNotification(email: string, bookingId: string, refundStatus: string): Promise<void> {
+    console.log(`---------------------------------------------------------`);
+    console.log(`📧 SYSTEM: Dispatching Cancellation & Refund Notification...`);
+    console.log(`To: ${email}`);
+    console.log(`Subject: Cancellation Notice for Booking #${bookingId}`);
+    console.log(`Message: Your booking has been canceled. Refund status: ${refundStatus}.`);
+    console.log(`---------------------------------------------------------`);
+  }
 }
