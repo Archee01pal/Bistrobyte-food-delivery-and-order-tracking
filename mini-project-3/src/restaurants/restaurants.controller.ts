@@ -1,7 +1,8 @@
-import { Controller, Post, Get, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { RestaurantsService } from './restaurants.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
+import { GetRestaurantsQueryDto } from './dto/get-restaurants-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -11,8 +12,13 @@ export class RestaurantsController {
   constructor(private readonly restaurantsService: RestaurantsService) {}
 
   @Get()
-  getAllRestaurants() {
-    return this.restaurantsService.findAllRestaurants();
+  getAllRestaurants(@Query() query: GetRestaurantsQueryDto) {
+    return this.restaurantsService.findAllRestaurants(query);
+  }
+
+  @Get(':id')
+  getRestaurantById(@Param('id') id: string) {
+    return this.restaurantsService.findRestaurantById(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,8 +29,11 @@ export class RestaurantsController {
   }
 
   @Get(':id/menu')
-  getRestaurantMenu(@Param('id') id: string) {
-    return this.restaurantsService.getMenuByRestaurant(id);
+  getRestaurantMenu(
+    @Param('id') id: string,
+    @Query('availableOnly') availableOnly?: string,
+  ) {
+    return this.restaurantsService.getMenuByRestaurant(id, availableOnly === 'true');
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
