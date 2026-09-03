@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { UserRole } from '../auth/decorators/roles.decorator';
 import * as bcrypt from 'bcryptjs';
 
@@ -12,8 +12,24 @@ export interface UserRecord {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   private usersTable: Map<string, UserRecord> = new Map();
+
+  // Seed default users automatically when the module initializes
+  async onModuleInit() {
+    const defaultPasswordHash = await bcrypt.hash('Password123!', 10);
+
+    const defaultAdmin: UserRecord = {
+      id: 'usr_admin_01',
+      email: 'paliwalarchee@gmail.com',
+      passwordHash: defaultPasswordHash,
+      name: 'Archee Paliwal', 
+      role: 'restaurant_admin' as UserRole,
+      createdAt: new Date(),
+    };
+
+    this.usersTable.set(defaultAdmin.id, defaultAdmin);
+  }
 
   async createUser(email: string, passwordRaw: string, name: string, role: UserRole): Promise<UserRecord> {
     const existing = Array.from(this.usersTable.values()).find(u => u.email === email);
