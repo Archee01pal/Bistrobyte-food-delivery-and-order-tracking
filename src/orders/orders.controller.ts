@@ -12,14 +12,14 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
-  @Roles('customer', 'admin', 'restaurant_admin')
+  @Roles('customer', 'admin', 'restaurant_admin', 'delivery_partner')
   createOrder(@Request() req, @Body() dto: CreateOrderDto) {
     const userId = req.user?.userId || req.user?.sub || req.user?.id;
     return this.ordersService.createOrderFromCart(userId, dto);
   }
 
   @Get('my-orders')
-  @Roles('customer', 'admin', 'restaurant_admin')
+  @Roles('customer', 'admin', 'restaurant_admin', 'delivery_partner')
   getMyOrders(@Request() req) {
     const userId = req.user?.userId || req.user?.sub || req.user?.id;
     return this.ordersService.getUserOrders(userId);

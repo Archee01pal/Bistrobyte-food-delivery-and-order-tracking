@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { CartService } from '../cart/cart.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 export enum OrderStatus {
@@ -21,6 +23,11 @@ export interface OrderItem {
   subtotal: number;
 }
 
+export interface StatusHistory {
+  status: OrderStatus;
+  timestamp: Date;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -32,6 +39,7 @@ export interface Order {
   discount: number;
   totalAmount: number;
   status: OrderStatus;
+  statusHistory: StatusHistory[];
   deliveryAddress: string;
   createdAt: Date;
   updatedAt: Date;
@@ -39,11 +47,13 @@ export interface Order {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
   private ordersTable: Map<string, Order> = new Map();
 
   constructor(
     private cartService: CartService,
     private restaurantsService: RestaurantsService,
+    private notificationsService: NotificationsService,
   ) {}
 
   createOrderFromCart(userId: string, dto: CreateOrderDto): Order {
@@ -53,10 +63,10 @@ export class OrdersService {
     }
 
     const orderItems: OrderItem[] = cart.items.map((item) => {
-      const menuItem = this.restaurantsService.getMenuItemById(item.menuItemId);
+      const menuItem = (this.restaurantsService as any).findMenuItemById(item.menuItemId);
       const price = menuItem ? menuItem.price : 0;
       const name = menuItem ? menuItem.name : 'Unknown Item';
-      
+
       return {
         menuItemId: item.menuItemId,
         name,
@@ -85,6 +95,7 @@ export class OrdersService {
       discount,
       totalAmount,
       status: OrderStatus.PENDING,
+      statusHistory: [{ status: OrderStatus.PENDING, timestamp: new Date() }],
       deliveryAddress: dto.deliveryAddress,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -92,6 +103,8 @@ export class OrdersService {
 
     this.ordersTable.set(newOrder.id, newOrder);
     this.cartService.clearCart(userId);
+
+    this.notificationsService.notifyOrderConfirmation('customer@example.com', orderNumber);
 
     return newOrder;
   }
@@ -114,7 +127,24 @@ export class OrdersService {
     const order = this.getOrderById(orderId);
     order.status = status;
     order.updatedAt = new Date();
+    order.statusHistory.push({ status, timestamp: new Date() });
     this.ordersTable.set(order.id, order);
+
+    this.notificationsService.notifyOrderStatusChange('customer@example.com', order.orderNumber, status);
+
     return order;
+  }
+
+  // Cron job running every minute to auto-cancel unfulfilled PENDING orders older than 15 minutes
+  @Cron(CronExpression.EVERY_MINUTE)
+  handlePendingTimeoutOrders() {
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+    for (const order of this.ordersTable.values()) {
+      if (order.status === OrderStatus.PENDING && order.createdAt < fifteenMinutesAgo) {
+        this.logger.warn(`[CRON] Timing out stale order: ${order.orderNumber}`);
+        this.updateOrderStatus(order.id, OrderStatus.CANCELLED);
+      }
+    }
   }
 }
