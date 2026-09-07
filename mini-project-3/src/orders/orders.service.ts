@@ -4,6 +4,7 @@ import { CartService } from '../cart/cart.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { GetOrdersQueryDto } from './dto/get-orders-query.dto';
 
 export enum OrderStatus {
   PENDING = 'PENDING',
@@ -63,7 +64,7 @@ export class OrdersService {
     }
 
     const orderItems: OrderItem[] = cart.items.map((item) => {
-      const menuItem = (this.restaurantsService as any).findMenuItemById(item.menuItemId);
+      const menuItem = this.restaurantsService.getMenuItemById(item.menuItemId);
       const price = menuItem ? menuItem.price : 0;
       const name = menuItem ? menuItem.name : 'Unknown Item';
 
@@ -113,6 +114,51 @@ export class OrdersService {
     return Array.from(this.ordersTable.values()).filter((o) => o.customerId === userId);
   }
 
+  getUserOrdersFiltered(userId: string, query: GetOrdersQueryDto) {
+    let orders = Array.from(this.ordersTable.values()).filter((o) => o.customerId === userId);
+
+    // Status Filter
+    if (query.status) {
+      orders = orders.filter((o) => o.status === query.status);
+    }
+
+    // Date Range Filter
+    if (query.startDate) {
+      const start = new Date(query.startDate);
+      orders = orders.filter((o) => new Date(o.createdAt) >= start);
+    }
+    if (query.endDate) {
+      const end = new Date(query.endDate);
+      end.setHours(23, 59, 59, 999);
+      orders = orders.filter((o) => new Date(o.createdAt) <= end);
+    }
+
+    // Sorting
+    orders.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      return query.sort === 'asc' ? timeA - timeB : timeB - timeA;
+    });
+
+    // Pagination
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const startIndex = (page - 1) * limit;
+    const paginatedOrders = orders.slice(startIndex, startIndex + limit);
+
+    return {
+      total: orders.length,
+      page,
+      limit,
+      totalPages: Math.ceil(orders.length / limit),
+      data: paginatedOrders,
+    };
+  }
+
+  getAllOrders(): Order[] {
+    return Array.from(this.ordersTable.values());
+  }
+
   getOrderById(orderId: string): Order {
     const order = this.ordersTable.get(orderId);
     if (!order) throw new NotFoundException('Order not found.');
@@ -135,7 +181,6 @@ export class OrdersService {
     return order;
   }
 
-  // Cron job running every minute to auto-cancel unfulfilled PENDING orders older than 15 minutes
   @Cron(CronExpression.EVERY_MINUTE)
   handlePendingTimeoutOrders() {
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
