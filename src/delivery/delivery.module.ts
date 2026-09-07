@@ -9,5 +9,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [OrdersModule, AuthModule, NotificationsModule],
   controllers: [DeliveryController],
   providers: [DeliveryService],
+  exports: [DeliveryService], // Enables ReportsModule to inject DeliveryService
 })
 export class DeliveryModule {}
