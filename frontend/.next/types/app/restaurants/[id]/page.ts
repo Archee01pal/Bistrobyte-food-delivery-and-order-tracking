@@ -1,8 +1,8 @@
-// File: C:\Users\HP\OneDrive\Desktop\node-induction\mini-project-3\frontend\src\app\(auth)\login\page.tsx
-import * as entry from '../../../../../src/app/(auth)/login/page.js'
+// File: C:\Users\HP\OneDrive\Desktop\node-induction\mini-project-3\frontend\src\app\restaurants\[id]\page.tsx
+import * as entry from '../../../../../src/app/restaurants/[id]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
-type TEntry = typeof import('../../../../../src/app/(auth)/login/page.js')
+type TEntry = typeof import('../../../../../src/app/restaurants/[id]/page.js')
 
 // Check that the entry is a valid entry
 checkFields<Diff<{

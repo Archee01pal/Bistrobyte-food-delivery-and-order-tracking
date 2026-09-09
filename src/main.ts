@@ -6,6 +6,11 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -34,8 +39,8 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(3000);
-  console.log('Application is running on: http://localhost:3000');
-  console.log('Swagger API Documentation available at: http://localhost:3000/api/docs');
+  await app.listen(3001);
+  console.log('Application is running on: http://localhost:3001');
+  console.log('Swagger API Documentation available at: http://localhost:3001/api/docs');
 }
 bootstrap();

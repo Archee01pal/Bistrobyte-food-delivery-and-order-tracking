@@ -2,51 +2,51 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
+import { useCart } from '@/context/cart-context';
+import { ShoppingBag } from 'lucide-react';
 
-export const Navbar = () => {
+export function Navbar() {
   const { user, logout } = useAuth();
+  const { totalItems } = useCart();
 
   return (
-    <nav className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-md">
-      <Link href="/" className="font-bold text-xl text-amber-500">
-        BistroByte
-      </Link>
-
-      <div className="flex items-center space-x-6 text-sm font-medium">
-        {user?.role === 'customer' && (
-          <Link href="/restaurants" className="hover:text-amber-400">Restaurants</Link>
-        )}
-        {user?.role === 'restaurant_admin' && (
-          <Link href="/restaurant-admin" className="hover:text-amber-400">My Restaurant</Link>
-        )}
-        {user?.role?.toLowerCase() === 'driver' && (
-          <Link href="/driver" className="hover:text-amber-400">Deliveries</Link>
-        )}
-        {user?.role === 'admin' && (
-          <Link href="/admin" className="hover:text-amber-400">Reports Dashboard</Link>
-        )}
-
-        {user ? (
-          <div className="flex items-center space-x-4">
-            <span className="bg-slate-800 px-3 py-1 rounded text-xs text-slate-300">
-              {user.name} ({user.role})
-            </span>
-            <button
-              onClick={logout}
-              className="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-xs font-semibold"
-            >
-              Logout
-            </button>
-          </div>
-        ) : (
-          <Link
-            href="/login"
-            className="bg-amber-500 hover:bg-amber-600 px-4 py-2 rounded text-slate-900 font-semibold"
-          >
-            Login
+    <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <Link href="/" className="text-xl font-bold text-amber-500">
+          BistroByte
+        </Link>
+        <div className="flex items-center gap-6">
+          <Link href="/restaurants" className="text-slate-600 hover:text-slate-900 font-medium">
+            Restaurants
           </Link>
-        )}
+          <Link href="/cart" className="relative p-2 text-slate-600 hover:text-slate-900">
+            <ShoppingBag className="w-6 h-6" />
+            {totalItems > 0 && (
+              <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {totalItems}
+              </span>
+            )}
+          </Link>
+          {user ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-semibold text-slate-700">{user.email}</span>
+              <button
+                onClick={logout}
+                className="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded"
+            >
+              Login
+            </Link>
+          )}
+        </div>
       </div>
     </nav>
   );
-};
+}
