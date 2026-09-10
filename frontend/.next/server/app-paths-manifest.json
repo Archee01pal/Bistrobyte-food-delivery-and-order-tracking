@@ -1,4 +1,9 @@
 {
+  "/not-found": "app/not-found.js",
   "/restaurants/page": "app/restaurants/page.js",
-  "/restaurants/[id]/page": "app/restaurants/[id]/page.js"
+  "/restaurants/[id]/page": "app/restaurants/[id]/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/payment/[orderId]/page": "app/payment/[orderId]/page.js",
+  "/checkout/page": "app/checkout/page.js",
+  "/orders/[id]/page": "app/orders/[id]/page.js"
 }

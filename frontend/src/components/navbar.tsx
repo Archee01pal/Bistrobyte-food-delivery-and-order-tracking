@@ -6,7 +6,7 @@ import { useCart } from '@/context/cart-context';
 import { ShoppingBag } from 'lucide-react';
 
 export function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const { totalItems } = useCart();
 
   return (
@@ -27,9 +27,15 @@ export function Navbar() {
               </span>
             )}
           </Link>
-          {user ? (
+
+          {/* Prevent layout flash during localStorage read */}
+          {isLoading ? (
+            <div className="w-16 h-8 bg-slate-100 animate-pulse rounded" />
+          ) : user ? (
             <div className="flex items-center gap-4">
-              <span className="text-sm font-semibold text-slate-700">{user.email}</span>
+              <span className="text-sm font-semibold text-slate-700">
+                {user.email || user.name || 'Account'}
+              </span>
               <button
                 onClick={logout}
                 className="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded"
