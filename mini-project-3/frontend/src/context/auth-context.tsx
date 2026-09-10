@@ -1,13 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, AuthResponse } from '../types/auth.types';
+import { User } from '../types/auth.types';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (data: AuthResponse) => void;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  login: (data: any) => void;
   logout: () => void;
 }
 
@@ -22,18 +23,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const storedToken = localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('user');
 
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+    if (storedToken && storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+      try {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error('Failed to parse user data from localStorage:', error);
+        localStorage.removeItem('user');
+        localStorage.removeItem('accessToken');
+      }
+    } else {
+      if (storedUser === 'undefined' || storedUser === 'null') {
+        localStorage.removeItem('user');
+      }
     }
     setIsLoading(false);
   }, []);
 
-  const login = (data: AuthResponse) => {
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    setToken(data.accessToken);
-    setUser(data.user);
+  const login = (data: any) => {
+    if (!data) return;
+
+    // Safely unwrap data in case Axios response or nested object is passed
+    const payload = data.data || data;
+    const extractedToken = payload.accessToken || payload.token || payload.access_token;
+    const extractedUser = payload.user || (payload.email ? payload : null);
+
+    if (extractedToken) {
+      localStorage.setItem('accessToken', extractedToken);
+      setToken(extractedToken);
+    } else {
+      console.warn('Login attempt made without a valid access token in payload:', payload);
+    }
+
+    if (extractedUser) {
+      localStorage.setItem('user', JSON.stringify(extractedUser));
+      setUser(extractedUser);
+    }
   };
 
   const logout = () => {
@@ -44,10 +69,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     window.location.href = '/login';
   };
 
-  return React.createElement(
-    AuthContext.Provider,
-    { value: { user, token, isLoading, login, logout } },
-    children,
+  return (
+    <AuthContext.Provider value={{ user, token, isLoading, setUser, login, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
 };
 
