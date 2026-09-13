@@ -1,10 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { getOrderByIdApi } from '@/lib/api-client';
 import { Order, OrderStatus } from '@/types';
-import { RefreshCw, History, CheckCircle2, Clock, Truck, Home } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { 
+  RefreshCw, 
+  History, 
+  CheckCircle2, 
+  Clock, 
+  UtensilsCrossed, 
+  PackageCheck, 
+  Truck, 
+  Home, 
+  ShieldCheck, 
+  ArrowLeft 
+} from 'lucide-react';
 
 const STATUS_STAGES: OrderStatus[] = [
   'PENDING',
@@ -18,15 +30,56 @@ const STATUS_STAGES: OrderStatus[] = [
 const STEP_ICONS: Record<string, any> = {
   PENDING: Clock,
   CONFIRMED: CheckCircle2,
-  PREPARING: Clock,
-  READY: CheckCircle2,
+  PREPARING: UtensilsCrossed,
+  READY: PackageCheck,
   IN_TRANSIT: Truck,
   DELIVERED: Home,
   CANCELLED: Clock,
 };
 
+// Custom Hover Animation Variants for Progress Step Icons
+const ICON_ANIMATIONS: Record<string, any> = {
+  PENDING: {
+    hover: {
+      rotate: [0, -20, 20, -20, 0],
+      transition: { duration: 0.5, repeat: Infinity },
+    },
+  },
+  CONFIRMED: {
+    hover: {
+      scale: [1, 1.25, 1],
+      transition: { duration: 0.4 },
+    },
+  },
+  PREPARING: {
+    hover: {
+      rotate: [0, -14, 14, -14, 14, 0],
+      transition: { duration: 0.4, repeat: Infinity },
+    },
+  },
+  READY: {
+    hover: {
+      y: [0, -6, 0],
+      transition: { duration: 0.4, repeat: Infinity },
+    },
+  },
+  IN_TRANSIT: {
+    hover: {
+      x: [-3, 6, -3],
+      transition: { duration: 0.4, repeat: Infinity },
+    },
+  },
+  DELIVERED: {
+    hover: {
+      scale: [1, 1.15, 1],
+      transition: { duration: 0.4, repeat: Infinity },
+    },
+  },
+};
+
 export default function OrderDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id as string;
   const [order, setOrder] = useState<Order | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -36,44 +89,61 @@ export default function OrderDetailsPage() {
     setRefreshing(true);
     try {
       const res = await getOrderByIdApi(id);
-      setOrder(res.data);
+      if (res?.data) {
+        setOrder(res.data);
+        setRefreshing(false);
+        return;
+      }
     } catch (error) {
-      console.warn(`API fetch failed for order ${id}, reading status from shared store:`, error);
-      
-      // Read dynamic status saved by the driver dashboard in localStorage
-      const storedStatus = (localStorage.getItem(`order_status_${id}`) as OrderStatus) || 'DELIVERED';
-      
-      const cleanId = String(id).toUpperCase();
-      const stages: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'IN_TRANSIT', 'DELIVERED'];
-      const targetIdx = stages.indexOf(storedStatus);
-      const activeStages = targetIdx !== -1 ? stages.slice(0, targetIdx + 1) : stages;
-
-      setOrder({
-        id: cleanId,
-        orderNumber: cleanId.startsWith('ORD-') ? cleanId : `ORD-${cleanId}`,
-        restaurantId: 'rest-1',
-        restaurantName: 'Bistro Byte Central',
-        customerName: `Customer (${cleanId.slice(-4)})`,
-        deliveryAddress: '742 Evergreen Terrace, Sector 4',
-        subtotal: 27.97,
-        deliveryFee: 0,
-        discount: 0,
-        totalAmount: 27.97,
-        status: storedStatus,
-        paymentStatus: 'SUCCESSFUL',
-        items: [
-          { id: 'm1', name: 'Taco Pack', quantity: 2, price: 12.99 },
-          { id: 'm2', name: 'Burrito Bowl', quantity: 1, price: 10.50 },
-        ],
-        statusHistory: activeStages.map((st, i) => ({
-          status: st,
-          timestamp: new Date(Date.now() - (activeStages.length - i) * 600000).toISOString(),
-        })),
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      });
-    } finally {
-      setRefreshing(false);
+      console.warn(`API fetch failed for order ${id}, reading from local storage fallback:`, error);
     }
+
+    // Dynamic fallback reading order payload saved during checkout
+    const storedStatus = (localStorage.getItem(`order_status_${id}`) as OrderStatus) || 'CONFIRMED';
+    const storedOrderData = localStorage.getItem(`latest_order_${id}`);
+    
+    let parsedItems = [];
+    let parsedTotal = 0;
+    let parsedAddress = 'Delivery Address';
+
+    if (storedOrderData) {
+      try {
+        const parsed = JSON.parse(storedOrderData);
+        parsedItems = parsed.items || [];
+        parsedTotal = parsed.totalAmount || 0;
+        parsedAddress = parsed.deliveryAddress || parsedAddress;
+      } catch (e) {
+        console.error('Error parsing stored order details', e);
+      }
+    }
+
+    const cleanId = String(id).toUpperCase();
+    const stages: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'IN_TRANSIT', 'DELIVERED'];
+    const targetIdx = stages.indexOf(storedStatus);
+    const activeStages = targetIdx !== -1 ? stages.slice(0, targetIdx + 1) : stages;
+
+    setOrder({
+      id: cleanId,
+      orderNumber: cleanId.startsWith('ORD-') ? cleanId : `ORD-${cleanId}`,
+      restaurantId: 'rest-1',
+      restaurantName: 'Bistro Byte',
+      customerName: 'Customer',
+      deliveryAddress: parsedAddress,
+      subtotal: parsedTotal,
+      deliveryFee: 0,
+      discount: 0,
+      totalAmount: parsedTotal,
+      status: storedStatus,
+      paymentStatus: 'SUCCESSFUL',
+      items: parsedItems,
+      statusHistory: activeStages.map((st, i) => ({
+        status: st,
+        timestamp: new Date(Date.now() - (activeStages.length - i) * 600000).toISOString(),
+      })),
+      createdAt: new Date().toISOString(),
+    });
+
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -81,139 +151,217 @@ export default function OrderDetailsPage() {
   }, [id]);
 
   if (!order) {
-    return <div className="p-8 text-center text-slate-500">Loading order details...</div>;
+    return (
+      <div className="min-h-screen bg-culinary-pattern flex items-center justify-center">
+        <div className="flex items-center gap-2 text-slate-600 font-medium bg-white/80 backdrop-blur-xs px-5 py-3 rounded-2xl border border-amber-100 shadow-xs">
+          <RefreshCw className="w-5 h-5 animate-spin text-amber-600" /> Loading order details...
+        </div>
+      </div>
+    );
   }
 
   const currentIdx = STATUS_STAGES.indexOf(order.status);
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
-      {/* Top Header Bar */}
-      <div className="flex justify-between items-center bg-white border p-5 rounded-xl shadow-sm">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">
-            Order #{order.orderNumber || order.id}
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Placed on {new Date(order.createdAt).toLocaleString()}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {order.paymentStatus && (
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-bold ${
-                order.paymentStatus === 'SUCCESSFUL' || order.paymentStatus === 'PAID'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-red-100 text-red-800'
-              }`}
-            >
-              Payment: {order.paymentStatus}
-            </span>
-          )}
+    <div className="min-h-screen bg-culinary-pattern text-slate-800 pb-16">
+      <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+        
+        {/* Navigation Bar */}
+        <div className="flex items-center justify-between">
           <button
-            onClick={fetchOrder}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+            onClick={() => router.push('/restaurants')}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-800 hover:bg-amber-100/50 px-3 py-1.5 rounded-xl transition cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Restaurants
           </button>
         </div>
-      </div>
 
-      {/* Progress Timeline Indicator */}
-      <div className="bg-white border p-6 rounded-xl shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-700 mb-6">Delivery Progress</h2>
-        {order.status !== 'CANCELLED' ? (
-          <div className="relative flex justify-between items-center w-full my-4">
-            <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-1 bg-slate-200 -z-0" />
-            <div
-              className="absolute left-0 top-1/2 transform -translate-y-1/2 h-1 bg-emerald-600 transition-all duration-500 -z-0"
-              style={{
-                width: `${Math.max(
-                  0,
-                  (currentIdx / (STATUS_STAGES.length - 1)) * 100
-                )}%`,
-              }}
-            />
-
-            {STATUS_STAGES.map((st, idx) => {
-              const Icon = STEP_ICONS[st] || Clock;
-              const isDone = idx <= currentIdx;
-              const isCurrent = idx === currentIdx;
-
-              return (
-                <div key={st} className="flex flex-col items-center bg-white z-10 px-1">
-                  <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center transition border-2 ${
-                      isDone
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'bg-white border-slate-300 text-slate-400'
-                    } ${isCurrent ? 'ring-4 ring-emerald-100' : ''}`}
-                  >
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <span
-                    className={`text-[11px] mt-2 font-semibold ${
-                      isDone ? 'text-emerald-700' : 'text-slate-400'
-                    }`}
-                  >
-                    {st}
-                  </span>
-                </div>
-              );
-            })}
+        {/* Top Header Bar */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-6 rounded-3xl border border-amber-100/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        >
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 font-serif">
+              Order #{order.orderNumber || order.id}
+            </h1>
+            <p className="text-xs font-medium text-slate-500 mt-1">
+              Placed on {new Date(order.createdAt).toLocaleString()}
+            </p>
           </div>
-        ) : (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg font-bold text-center">
-            Order Cancelled / Timed Out
+          
+          <div className="flex items-center gap-3">
+            {order.paymentStatus && (
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-extrabold ${
+                  order.paymentStatus === 'SUCCESSFUL' || order.paymentStatus === 'PAID'
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                    : 'bg-rose-50 border border-rose-200 text-rose-700'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Payment: {order.paymentStatus}
+              </span>
+            )}
+            
+            <button
+              onClick={fetchOrder}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold px-3.5 py-1.5 rounded-xl text-xs transition shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+            </button>
           </div>
-        )}
-      </div>
+        </motion.div>
 
-      {/* Status History Log & Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white border p-5 rounded-xl shadow-sm">
-          <h2 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-500" /> Status History Log
-          </h2>
-          {order.statusHistory && order.statusHistory.length > 0 ? (
-            <div className="space-y-3 border-l-2 border-slate-200 ml-2 pl-4">
-              {order.statusHistory.map((h, i) => (
-                <div key={i} className="text-xs flex justify-between text-slate-600">
-                  <span className="font-semibold text-slate-700">
-                    {String(h.status).replace('_', ' ')}
-                  </span>
-                  <span className="text-slate-400">
-                    {new Date(h.timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-              ))}
+        {/* Delivery Progress Stepper */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="bg-white p-6 sm:p-8 rounded-3xl border border-amber-100/80 shadow-sm space-y-6"
+        >
+          <h2 className="text-base font-bold text-slate-900 font-serif">Delivery Progress</h2>
+          
+          {order.status !== 'CANCELLED' ? (
+            <div className="relative flex justify-between items-center w-full my-4 px-2">
+              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-[3px] bg-slate-100 -z-0" />
+              <div
+                className="absolute left-0 top-1/2 transform -translate-y-1/2 h-[3px] bg-emerald-500 transition-all duration-500 -z-0"
+                style={{
+                  width: `${Math.max(
+                    0,
+                    (currentIdx / (STATUS_STAGES.length - 1)) * 100
+                  )}%`,
+                }}
+              />
+
+              {STATUS_STAGES.map((st, idx) => {
+                const Icon = STEP_ICONS[st] || Clock;
+                const isDone = idx <= currentIdx;
+                const isCurrent = idx === currentIdx;
+                const animationVariant = ICON_ANIMATIONS[st] || {};
+
+                return (
+                  <motion.div 
+                    key={st} 
+                    initial="initial"
+                    whileHover="hover"
+                    className="flex flex-col items-center bg-white z-10 px-1 group cursor-pointer"
+                  >
+                    <motion.div
+                      className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${
+                        isDone
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-4 ring-emerald-100'
+                          : 'bg-white border-2 border-slate-200 text-slate-400'
+                      }`}
+                    >
+                      <motion.div variants={animationVariant}>
+                        <Icon className={`w-5 h-5 ${isCurrent ? 'animate-pulse' : ''}`} />
+                      </motion.div>
+                    </motion.div>
+                    <span
+                      className={`text-[10px] font-extrabold tracking-wide mt-2 transition-colors ${
+                        isDone ? 'text-emerald-700' : 'text-slate-400'
+                      }`}
+                    >
+                      {st.replace('_', ' ')}
+                    </span>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
-            <p className="text-xs text-slate-500">Current Status: {order.status}</p>
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-2xl font-bold text-center text-xs">
+              Order Cancelled / Timed Out
+            </div>
           )}
+        </motion.div>
+
+        {/* Items & Order Summary Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* Purchased Items List */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white p-6 rounded-3xl border border-amber-100/80 shadow-sm space-y-4"
+          >
+            <h2 className="text-base font-bold text-slate-900 font-serif border-b border-slate-100 pb-3">
+              Ordered Items
+            </h2>
+
+            {order.items && order.items.length > 0 ? (
+              <div className="divide-y divide-slate-100">
+                {order.items.map((rawItem: any, index: number) => {
+                  const item = rawItem.menuItem ? rawItem.menuItem : rawItem;
+                  const itemName = item.name || rawItem.name || 'Menu Item';
+                  const quantity = rawItem.quantity || item.quantity || 1;
+                  const price = Number(item.price || rawItem.price || 0);
+
+                  return (
+                    <div key={index} className="py-2.5 flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-amber-600 text-xs bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                          {quantity}x
+                        </span>
+                        <span className="font-medium text-slate-800">{itemName}</span>
+                      </div>
+                      <span className="font-bold text-slate-900">${(price * quantity).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic py-2">No item details available for this order.</p>
+            )}
+          </motion.div>
+
+          {/* Status History & Summary */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-white p-6 rounded-3xl border border-amber-100/80 shadow-sm flex flex-col justify-between space-y-4"
+          >
+            <div className="space-y-3">
+              <h2 className="text-base font-bold text-slate-900 font-serif flex items-center gap-2 border-b border-slate-100 pb-3">
+                <History className="w-4 h-4 text-amber-600" /> Status History Log
+              </h2>
+
+              {order.statusHistory && order.statusHistory.length > 0 ? (
+                <div className="space-y-2 border-l-2 border-slate-100 ml-2 pl-4">
+                  {order.statusHistory.map((h, i) => (
+                    <div key={i} className="text-xs flex justify-between items-center text-slate-600">
+                      <span className="font-bold text-slate-800">
+                        {String(h.status).replace('_', ' ')}
+                      </span>
+                      <span className="text-slate-400 font-medium">
+                        {new Date(h.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Current Status: {order.status}</p>
+              )}
+            </div>
+
+            <div className="border-t border-dashed border-slate-200 pt-4 flex justify-between items-center">
+              <span className="font-serif font-black text-slate-900 text-base">Total Paid</span>
+              <span className="text-emerald-600 font-extrabold text-xl font-sans">
+                ${Number(order.totalAmount || 0).toFixed(2)}
+              </span>
+            </div>
+          </motion.div>
+
         </div>
 
-        <div className="bg-white border p-5 rounded-xl shadow-sm flex flex-col justify-between">
-          <h2 className="font-semibold text-slate-800 text-sm mb-4">Order Summary</h2>
-          <div className="space-y-2 text-sm border-t pt-3">
-            <div className="flex justify-between text-slate-600">
-              <span>Subtotal</span>
-              <span>${Number(order.totalAmount).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Delivery Fee</span>
-              <span>Free</span>
-            </div>
-            <div className="flex justify-between text-base font-bold text-slate-800 border-t pt-2">
-              <span>Total Amount</span>
-              <span className="text-emerald-600">${Number(order.totalAmount).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

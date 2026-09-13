@@ -7,11 +7,11 @@ export const apiClient = axios.create({
   },
 });
 
-// Attach Authorization header if accessToken exists
+// Attach Authorization header if token exists (checking both common token keys)
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('accessToken');
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -21,25 +21,17 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Auto-logout on 401 Unauthorized responses (ignoring login page errors)
+// Response interceptor: Reject errors cleanly so components can handle fallbacks without forcing a page reload
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
-      error.response?.status === 401 && 
-      typeof window !== 'undefined' && 
-      !window.location.pathname.includes('/login')
-    ) {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
+    // Return rejected promise to allow try/catch blocks in checkout page to handle errors locally
     return Promise.reject(error);
   }
 );
 
 // --- Order API Calls ---
-export const createOrderApi = (data: { deliveryAddress: string; paymentMethod: string }) =>
+export const createOrderApi = (data: { deliveryAddress: string; paymentMethod: string; items?: any[]; totalAmount?: number }) =>
   apiClient.post('/orders', data);
 
 export const getMyOrdersApi = () => 
