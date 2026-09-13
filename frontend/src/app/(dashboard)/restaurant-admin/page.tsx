@@ -1,42 +1,82 @@
 'use client';
 
-import Link from 'next/link';
-import { Utensils, ClipboardList, Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import api from '@/lib/axios';
+import Loader from '@/components/common/Loader';
+import ErrorState from '@/components/common/ErrorState';
+import EmptyState from '@/components/common/EmptyState';
 
-export default function RestaurantAdminDashboard() {
+export default function RestaurantDashboardPage() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await api.get('/restaurant/orders');
+      setOrders(res.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      await api.patch(`/restaurant/orders/${orderId}/status`, { status: newStatus });
+      fetchDashboardData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  if (loading) return <Loader label="Loading restaurant dashboard..." />;
+  if (error) return <ErrorState message={error} onRetry={fetchDashboardData} />;
+
   return (
-    <div className="max-w-6xl mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold text-slate-800 mb-2">Restaurant Management</h1>
-      <p className="text-slate-600 mb-8">Manage your restaurant menu, active orders, and settings.</p>
+    <div className="max-w-6xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Restaurant Kitchen Operations</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link 
-          href="/restaurant-admin/menu"
-          className="p-6 bg-white rounded-lg border shadow-sm hover:shadow-md transition-shadow group"
-        >
-          <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600 mb-4 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-            <Utensils className="w-6 h-6" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-1">Menu Management</h2>
-          <p className="text-sm text-slate-500">Add, edit, or remove menu items and set prices.</p>
-        </Link>
-
-        <div className="p-6 bg-white rounded-lg border shadow-sm opacity-60">
-          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 mb-4">
-            <ClipboardList className="w-6 h-6" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-1">Incoming Orders</h2>
-          <p className="text-sm text-slate-500">View real-time customer orders (Coming soon).</p>
+      {orders.length === 0 ? (
+        <EmptyState title="No active kitchen orders" description="New orders will appear here automatically." />
+      ) : (
+        <div className="grid gap-4">
+          {orders.map((order) => (
+            <div key={order.id} className="border p-4 bg-white rounded-lg flex justify-between items-center shadow-sm">
+              <div>
+                <p className="font-bold">Order #{order.id.slice(-6)}</p>
+                <p className="text-sm text-gray-500">Items: {order.items?.length || 0}</p>
+                <p className="text-xs text-amber-600 font-semibold mt-1">Status: {order.status}</p>
+              </div>
+              <div className="flex gap-2">
+                {order.status === 'PENDING' && (
+                  <button 
+                    onClick={() => updateOrderStatus(order.id, 'PREPARING')}
+                    className="px-3 py-1 bg-blue-600 text-white rounded text-sm font-medium"
+                  >
+                    Accept & Prepare
+                  </button>
+                )}
+                {order.status === 'PREPARING' && (
+                  <button 
+                    onClick={() => updateOrderStatus(order.id, 'READY_FOR_PICKUP')}
+                    className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium"
+                  >
+                    Mark Ready
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
-
-        <div className="p-6 bg-white rounded-lg border shadow-sm opacity-60">
-          <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600 mb-4">
-            <Settings className="w-6 h-6" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-1">Store Settings</h2>
-          <p className="text-sm text-slate-500">Update business hours and address (Coming soon).</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

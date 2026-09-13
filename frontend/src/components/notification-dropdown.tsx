@@ -2,39 +2,91 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Bell, Check, Clock, AlertTriangle, PackageCheck, Truck } from 'lucide-react';
+import { Bell, Check, Clock, AlertTriangle, PackageCheck, Truck, CheckCircle2 } from 'lucide-react';
 import { useNotifications } from '@/context/notification-context';
 
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
-  const getIcon = (type: string) => {
+  // Deduplicate notifications per order: keep only the latest status update per orderId
+  const latestNotifications = notifications.reduce((acc, current) => {
+    if (!current.orderId) {
+      acc.push(current);
+      return acc;
+    }
+    const existingIndex = acc.findIndex((n) => n.orderId === current.orderId);
+    if (existingIndex === -1) {
+      acc.push(current);
+    }
+    return acc;
+  }, [] as typeof notifications);
+
+  const handleToggle = () => {
+    const nextState = !isOpen;
+    setIsOpen(nextState);
+    if (nextState && unreadCount > 0) {
+      markAllAsRead();
+    }
+  };
+
+  const getStatusBadge = (type?: string, title?: string) => {
+    const isDelivered = type === 'COMPLETION' || title?.toUpperCase().includes('DELIVERED');
+
+    if (isDelivered) {
+      return (
+        <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-full shrink-0">
+          <CheckCircle2 className="w-4 h-4" />
+        </div>
+      );
+    }
+
     switch (type) {
-      case 'CONFIRMATION': return <Clock className="w-4 h-4 text-blue-500" />;
-      case 'ASSIGNMENT': return <Truck className="w-4 h-4 text-purple-500" />;
-      case 'COMPLETION': return <PackageCheck className="w-4 h-4 text-emerald-500" />;
-      case 'TIMEOUT': return <AlertTriangle className="w-4 h-4 text-red-500" />;
-      default: return <Bell className="w-4 h-4 text-amber-500" />;
+      case 'CONFIRMATION':
+        return (
+          <div className="p-1.5 bg-blue-100 text-blue-600 rounded-full shrink-0">
+            <Clock className="w-4 h-4" />
+          </div>
+        );
+      case 'ASSIGNMENT':
+        return (
+          <div className="p-1.5 bg-purple-100 text-purple-600 rounded-full shrink-0">
+            <Truck className="w-4 h-4" />
+          </div>
+        );
+      case 'TIMEOUT':
+        return (
+          <div className="p-1.5 bg-red-100 text-red-600 rounded-full shrink-0">
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+        );
+      default:
+        return (
+          <div className="p-1.5 bg-amber-100 text-amber-600 rounded-full shrink-0">
+            <Bell className="w-4 h-4" />
+          </div>
+        );
     }
   };
 
   return (
     <div className="relative">
+      {/* Bell Icon Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-full hover:bg-slate-100 transition"
+        onClick={handleToggle}
+        className="relative p-2 rounded-full hover:bg-slate-100 transition focus:outline-none"
       >
         <Bell className="w-6 h-6 text-slate-700" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+          <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full h-4 w-4 flex items-center justify-center animate-pulse">
             {unreadCount}
           </span>
         )}
       </button>
 
+      {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="p-3 bg-slate-50 border-b flex justify-between items-center">
             <span className="font-bold text-slate-800 text-sm">Notifications</span>
             {unreadCount > 0 && (
@@ -47,37 +99,52 @@ export default function NotificationDropdown() {
             )}
           </div>
 
-          <div className="max-h-80 overflow-y-auto divide-y">
-            {notifications.length === 0 ? (
-              <div className="p-4 text-center text-sm text-slate-500">No notifications</div>
+          <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+            {latestNotifications.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400 italic">
+                No active notifications
+              </div>
             ) : (
-              notifications.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => markAsRead(item.id)}
-                  className={`p-3 text-sm cursor-pointer transition ${
-                    item.read ? 'bg-white' : 'bg-emerald-50/50'
-                  }`}
-                >
-                  <div className="flex gap-2 items-start">
-                    <div className="mt-0.5">{getIcon(item.type)}</div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-slate-800 flex justify-between">
-                        <span>{item.title}</span>
-                        {!item.read && <span className="h-2 w-2 rounded-full bg-emerald-500"></span>}
+              latestNotifications.map((item) => {
+                const isDelivered =
+                  item.type === 'COMPLETION' || item.title?.toUpperCase().includes('DELIVERED');
+
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => markAsRead(item.id)}
+                    className={`p-3 text-sm cursor-pointer transition flex items-start gap-3 ${
+                      item.read ? 'bg-white opacity-80' : 'bg-emerald-50/40'
+                    }`}
+                  >
+                    {/* Visual Status Indicator */}
+                    {getStatusBadge(item.type, item.title)}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center">
+                        <span
+                          className={`font-bold text-xs truncate ${
+                            isDelivered ? 'text-emerald-800' : 'text-slate-800'
+                          }`}
+                        >
+                          {item.title}
+                        </span>
+                        {!item.read && (
+                          <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 ml-2"></span>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-600 mt-1">{item.message}</p>
+                      <p className="text-xs text-slate-600 mt-0.5 leading-snug">{item.message}</p>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
           <Link
             href="/notifications"
             onClick={() => setIsOpen(false)}
-            className="block text-center py-2 bg-slate-50 hover:bg-slate-100 text-xs text-slate-700 font-semibold border-t"
+            className="block text-center py-2.5 bg-slate-50 hover:bg-slate-100 text-xs text-slate-700 font-semibold border-t transition"
           >
             View All Notifications
           </Link>
