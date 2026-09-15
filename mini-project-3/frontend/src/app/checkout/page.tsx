@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/cart-context';
 import { useNotifications } from '@/context/notification-context';
@@ -9,11 +9,16 @@ import { MapPin, ShoppingBag, CreditCard, ArrowLeft, Tag, ShieldCheck, Loader2 }
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cart, items = [], subtotal = 0, clearCart } = useCart();
+  const { cart, items = [], subtotal = 0, isLoading } = useCart();
   const { addNotification } = useNotifications();
 
+  const [isHydrated, setIsHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [address, setAddress] = useState('');
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const cartItems = items.length > 0 ? items : cart?.items || [];
   const deliveryFee = cartItems.length > 0 ? 3.99 : 0;
@@ -81,9 +86,7 @@ export default function CheckoutPage() {
         orderId: orderId,
       });
 
-      if (clearCart) clearCart();
-      
-      // Navigate to Payment selection page before order tracking
+      // Navigate immediately without clearing cart state prematurely
       router.push(`/payments/${orderId}`);
     } catch (error) {
       console.warn('Backend order placement bypassed, placing order in demo mode.');
@@ -98,15 +101,56 @@ export default function CheckoutPage() {
         orderId: demoOrderId,
       });
 
-      if (clearCart) clearCart();
-
-      // Navigate to Payment selection page before order tracking
+      // Navigate immediately without clearing cart state prematurely
       router.push(`/payments/${demoOrderId}`);
-    } finally {
-      setLoading(false);
     }
   };
 
+  // Initial Context / Hydration loader
+  if (!isHydrated || isLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+          <p className="text-xs font-semibold text-slate-500">Preparing checkout...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Active route transition view (prevents flash during page resolution)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] text-slate-800 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-white p-8 rounded-3xl border border-amber-100 shadow-sm text-center space-y-4"
+        >
+          <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center border border-emerald-200">
+              <CreditCard className="w-7 h-7 text-emerald-600 animate-pulse" />
+            </div>
+            <Loader2 className="w-20 h-20 text-emerald-500 animate-spin absolute -top-2 -left-2" />
+          </div>
+
+          <h2 className="text-xl font-black text-slate-900 font-serif">
+            Creating Your Order
+          </h2>
+          <p className="text-xs font-medium text-slate-500">
+            Please wait while we prepare your payment options...
+          </p>
+
+          <div className="pt-2 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400 bg-slate-50 py-2 px-4 rounded-xl border border-slate-100">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Redirecting to Payment Gateway</span>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Render empty cart state only if user explicitly visits checkout with an empty cart
   if (!cartItems || cartItems.length === 0) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] text-slate-800 flex items-center justify-center p-4">
@@ -120,7 +164,7 @@ export default function CheckoutPage() {
           </p>
           <button
             onClick={() => router.push('/restaurants')}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-extrabold px-6 py-3 rounded-2xl text-xs transition-all shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-extrabold px-6 py-3 rounded-2xl text-xs transition-all shadow-md hover:shadow-lg hover:scale-105 active:scale-95 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" /> Browse Restaurants
           </button>
@@ -132,7 +176,6 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-slate-800 pb-16">
       <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
-        
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -145,7 +188,7 @@ export default function CheckoutPage() {
           </div>
           <button
             onClick={() => router.push('/cart')}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-800 hover:bg-amber-100/50 px-3 py-1.5 rounded-xl transition"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-800 hover:bg-amber-100/50 px-3 py-1.5 rounded-xl transition cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Cart
           </button>
@@ -260,7 +303,6 @@ export default function CheckoutPage() {
             </>
           )}
         </motion.button>
-
       </div>
     </div>
   );

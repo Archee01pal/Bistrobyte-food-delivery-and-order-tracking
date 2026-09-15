@@ -15,8 +15,18 @@ import {
   Truck, 
   Home, 
   ShieldCheck, 
-  ArrowLeft 
+  ArrowLeft,
+  Phone,
+  Bike
 } from 'lucide-react';
+
+interface DriverInfo {
+  id: string;
+  name: string;
+  phone: string;
+  vehicle: string;
+  rating: number;
+}
 
 const STATUS_STAGES: OrderStatus[] = [
   'PENDING',
@@ -81,12 +91,29 @@ export default function OrderDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+
   const [order, setOrder] = useState<Order | null>(null);
+  const [driver, setDriver] = useState<DriverInfo | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchOrder = async () => {
     if (!id) return;
     setRefreshing(true);
+
+    // 1. Check for assigned driver saved locally from Admin Dispatch
+    if (typeof window !== 'undefined') {
+      const driverName = localStorage.getItem(`assigned_driver_name_${id}`);
+      if (driverName) {
+        setDriver({
+          id: 'drv-alex',
+          name: driverName,
+          phone: '+1 (555) 019-2834',
+          vehicle: 'Toyota Prius (White - #7AB2)',
+          rating: 4.9,
+        });
+      }
+    }
+
     try {
       const res = await getOrderByIdApi(id);
       if (res?.data) {
@@ -105,6 +132,10 @@ export default function OrderDetailsPage() {
     let parsedItems = [];
     let parsedTotal = 0;
     let parsedAddress = 'Delivery Address';
+    let parsedRestaurantId = '';
+    let parsedRestaurantName = '';
+    let parsedCustomerName = 'Customer';
+    let parsedCreatedAt = new Date().toISOString();
 
     if (storedOrderData) {
       try {
@@ -112,6 +143,10 @@ export default function OrderDetailsPage() {
         parsedItems = parsed.items || [];
         parsedTotal = parsed.totalAmount || 0;
         parsedAddress = parsed.deliveryAddress || parsedAddress;
+        parsedRestaurantId = parsed.restaurantId || parsed.restaurant?.id || '';
+        parsedRestaurantName = parsed.restaurantName || parsed.restaurant?.name || 'Restaurant';
+        parsedCustomerName = parsed.customerName || parsedCustomerName;
+        parsedCreatedAt = parsed.createdAt || parsedCreatedAt;
       } catch (e) {
         console.error('Error parsing stored order details', e);
       }
@@ -125,9 +160,9 @@ export default function OrderDetailsPage() {
     setOrder({
       id: cleanId,
       orderNumber: cleanId.startsWith('ORD-') ? cleanId : `ORD-${cleanId}`,
-      restaurantId: 'rest-1',
-      restaurantName: 'Bistro Byte',
-      customerName: 'Customer',
+      restaurantId: parsedRestaurantId,
+      restaurantName: parsedRestaurantName,
+      customerName: parsedCustomerName,
       deliveryAddress: parsedAddress,
       subtotal: parsedTotal,
       deliveryFee: 0,
@@ -140,7 +175,7 @@ export default function OrderDetailsPage() {
         status: st,
         timestamp: new Date(Date.now() - (activeStages.length - i) * 600000).toISOString(),
       })),
-      createdAt: new Date().toISOString(),
+      createdAt: parsedCreatedAt,
     });
 
     setRefreshing(false);
@@ -148,7 +183,27 @@ export default function OrderDetailsPage() {
 
   useEffect(() => {
     fetchOrder();
-  }, [id]);
+    const interval = setInterval(() => {
+      if (typeof window !== 'undefined' && id) {
+        const driverName = localStorage.getItem(`assigned_driver_name_${id}`);
+        const liveStatus = (localStorage.getItem(`order_status_${id}`) as OrderStatus);
+        if (driverName && (!driver || driver.name !== driverName)) {
+          setDriver({
+            id: 'drv-alex',
+            name: driverName,
+            phone: '+1 (555) 019-2834',
+            vehicle: 'Toyota Prius (White - #7AB2)',
+            rating: 4.9,
+          });
+        }
+        if (liveStatus && order && order.status !== liveStatus) {
+          setOrder((prev) => (prev ? { ...prev, status: liveStatus } : prev));
+        }
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [id, order?.status]);
 
   if (!order) {
     return (
@@ -164,6 +219,39 @@ export default function OrderDetailsPage() {
 
   return (
     <div className="min-h-screen bg-culinary-pattern text-slate-800 pb-16">
+      
+      {/* 1. Live Customer Sub-Navbar Status Header */}
+      <div className="bg-slate-900 text-white py-2.5 px-4 shadow-md sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto flex flex-wrap justify-between items-center text-xs gap-2">
+          <div className="flex items-center space-x-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span className="font-bold text-amber-400 uppercase tracking-wider">
+              Live Order Status:
+            </span>
+            <span className="font-extrabold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded border border-emerald-500/40">
+              {order.status.replace('_', ' ')}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-1.5 text-slate-300">
+              <span className="text-slate-400">Assigned Driver:</span>
+              {driver ? (
+                <span className="font-bold text-sky-300 flex items-center gap-1">
+                  <Bike className="w-3.5 h-3.5" />
+                  <span>{driver.name}</span>
+                </span>
+              ) : (
+                <span className="text-amber-400 italic">Assigning nearby driver...</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
         
         {/* Navigation Bar */}
@@ -176,7 +264,7 @@ export default function OrderDetailsPage() {
           </button>
         </div>
 
-        {/* Top Header Bar */}
+        {/* Top Header Card */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -186,7 +274,12 @@ export default function OrderDetailsPage() {
             <h1 className="text-2xl font-black text-slate-900 font-serif">
               Order #{order.orderNumber || order.id}
             </h1>
-            <p className="text-xs font-medium text-slate-500 mt-1">
+            {order.restaurantName && (
+              <p className="text-sm font-bold text-amber-700 mt-1">
+                {order.restaurantName}
+              </p>
+            )}
+            <p className="text-xs font-medium text-slate-500 mt-0.5">
               Placed on {new Date(order.createdAt).toLocaleString()}
             </p>
           </div>
@@ -276,6 +369,42 @@ export default function OrderDetailsPage() {
             <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-2xl font-bold text-center text-xs">
               Order Cancelled / Timed Out
             </div>
+          )}
+        </motion.div>
+
+        {/* 2. Assigned Delivery Driver Info Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50 border border-sky-200/80 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+        >
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 rounded-2xl bg-sky-500 text-white flex items-center justify-center text-xl shadow-md">
+              <Bike className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-sky-800 bg-sky-200/70 px-2.5 py-0.5 rounded-full">
+                Assigned Delivery Partner
+              </span>
+              <h3 className="text-lg font-black text-slate-900 mt-1">
+                {driver ? driver.name : 'Dispatching Nearest Driver...'}
+              </h3>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {driver
+                  ? `${driver.vehicle} • ★ ${driver.rating} rating`
+                  : 'Your assigned delivery partner will appear here once dispatched from the kitchen.'}
+              </p>
+            </div>
+          </div>
+
+          {driver && (
+            <a
+              href={`tel:${driver.phone}`}
+              className="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-2xl shadow-md transition transform active:scale-95"
+            >
+              <Phone className="w-3.5 h-3.5" /> Call {driver.name}
+            </a>
           )}
         </motion.div>
 

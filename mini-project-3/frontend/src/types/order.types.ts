@@ -1,3 +1,12 @@
+export type OrderStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'PREPARING'
+  | 'READY'
+  | 'IN_TRANSIT'
+  | 'DELIVERED'
+  | 'CANCELLED';
+
 export type DeliveryStatus = 'ASSIGNED' | 'PICKED_UP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
 
 export interface OrderItem {
@@ -8,18 +17,19 @@ export interface OrderItem {
 }
 
 export interface StatusHistory {
-  status: DeliveryStatus | string;
+  status: OrderStatus | DeliveryStatus | string;
   timestamp: string;
   note?: string;
 }
 
 export interface Order {
   id: string;
+  orderNumber?: string;
   customerName: string;
   deliveryAddress: string;
   restaurantName: string;
   totalAmount: number;
-  status: DeliveryStatus;
+  status: OrderStatus | DeliveryStatus;
   items: OrderItem[];
   statusHistory: StatusHistory[];
   createdAt: string;

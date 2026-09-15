@@ -1,484 +1,517 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { apiClient } from '@/lib/api-client';
-import { Order, OrderStatus } from '@/types';
-import { 
-  Truck, 
-  MapPin, 
-  Package, 
-  Phone, 
-  CreditCard, 
-  Banknote, 
-  QrCode, 
-  History, 
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import {
+  Truck,
+  History,
+  Trash2,
+  CreditCard,
+  PhoneCall,
+  MapPin,
+  Store,
   CheckCircle2,
-  Clock,
-  UtensilsCrossed,
   PackageCheck,
-  Home
+  Clock,
+  X,
+  Sparkles
 } from 'lucide-react';
-import { useNotifications } from '@/context/notification-context';
-
-type ExtendedOrder = Order & {
-  paymentMethod?: string;
-};
-
-// Hover Animation Variants for Status Buttons
-const STATUS_BTN_ANIMATIONS: Record<string, any> = {
-  CONFIRMED: {
-    hover: { scale: [1, 1.2, 1], transition: { duration: 0.3 } },
-  },
-  PREPARING: {
-    hover: { rotate: [0, -12, 12, -12, 12, 0], transition: { duration: 0.4, repeat: Infinity } },
-  },
-  READY: {
-    hover: { y: [0, -4, 0], transition: { duration: 0.4, repeat: Infinity } },
-  },
-  IN_TRANSIT: {
-    hover: { x: [-2, 5, -2], transition: { duration: 0.4, repeat: Infinity } },
-  },
-  DELIVERED: {
-    hover: { scale: [1, 1.15, 1], transition: { duration: 0.4, repeat: Infinity } },
-  },
-};
-
-const STATUS_ICONS: Record<string, any> = {
-  CONFIRMED: CheckCircle2,
-  PREPARING: UtensilsCrossed,
-  READY: PackageCheck,
-  IN_TRANSIT: Truck,
-  DELIVERED: Home,
-};
 
 export default function DriverDashboard() {
-  const [orders, setOrders] = useState<ExtendedOrder[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<ExtendedOrder | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [driverStatus, setDriverStatus] = useState<'Available' | 'Busy' | 'Offline'>('Available');
   const [sidebarTab, setSidebarTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
-  const { addNotification } = useNotifications();
+  
+  // Orders State
+  const [activeOrders, setActiveOrders] = useState<any[]>([]);
+  const [historyOrders, setHistoryOrders] = useState<any[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
-  // Mock assigned driver details
-  const driverInfo = {
-    name: 'Alex',
-    phone: '+1 (555) 019-2834',
-    rating: '4.9 ★',
-    vehicle: 'Toyota Prius (Green) • License: 7XYZ89',
-  };
+  // Dynamic Offer Modal State
+  const [showOfferModal, setShowOfferModal] = useState<boolean>(false);
+  const [offerTimer, setOfferTimer] = useState<number>(25);
 
-  const fetchAssignedOrders = async () => {
-    try {
-      const res = await apiClient.get('/driver/orders');
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        setOrders(res.data);
-        setSelectedOrder(res.data[0]);
-        return;
-      }
-    } catch {
-      console.warn('Backend driver endpoint offline, scanning local storage for active orders.');
-    }
+  // Dynamic Restaurant Name Resolver Helper
+  const resolveRestaurantName = useCallback((parsed: any) => {
+    return (
+      parsed?.restaurantName ||
+      parsed?.restaurant_name ||
+      parsed?.restaurant?.name ||
+      parsed?.restaurant?.title ||
+      parsed?.vendorName ||
+      parsed?.vendor?.name ||
+      parsed?.items?.[0]?.restaurantName ||
+      parsed?.items?.[0]?.restaurant?.name ||
+      (parsed?.restaurantId ? `Restaurant #${String(parsed.restaurantId).slice(-4)}` : 'Italiano')
+    );
+  }, []);
 
-    const localOrders: ExtendedOrder[] = [];
-    if (typeof window !== 'undefined') {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('latest_order_')) {
-          try {
-            const raw = localStorage.getItem(key);
-            if (raw) {
-              const orderId = key.replace('latest_order_', '');
-              const parsed = JSON.parse(raw);
-              const displayId = orderId.startsWith('ORD-') ? orderId : `ORD-${orderId.slice(-6)}`;
-              const currentStatus = (localStorage.getItem(`order_status_${orderId}`) as OrderStatus) || 'CONFIRMED';
-              const pMethod = parsed.paymentMethod || 'CARD';
+  // Sync / Load Real-Time Orders from Local Storage
+  const loadOrders = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const active: any[] = [];
+    const completed: any[] = [];
 
-              localOrders.push({
-                id: orderId,
-                orderNumber: displayId,
-                restaurantId: parsed.restaurantId || 'rest-1',
-                customerName: parsed.customerName || 'Customer',
-                deliveryAddress: parsed.deliveryAddress || 'Address specified in order details',
-                restaurantName: parsed.restaurantName || 'Bistro Byte Central',
-                subtotal: parsed.totalAmount || 0,
-                deliveryFee: 3.99,
-                discount: 2.00,
-                totalAmount: parsed.totalAmount || 0,
-                status: currentStatus,
-                paymentStatus: parsed.paymentStatus || (pMethod === 'COD' ? 'PENDING' : 'SUCCESSFUL'),
-                paymentMethod: pMethod,
-                items: parsed.items || [],
-                statusHistory: [
-                  { status: currentStatus, timestamp: new Date().toLocaleTimeString() },
-                ],
-                createdAt: parsed.createdAt || new Date().toISOString(),
-              });
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('latest_order_')) {
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const orderId = key.replace('latest_order_', '');
+            const parsed = JSON.parse(raw);
+            const status = localStorage.getItem(`order_status_${orderId}`) || parsed.status || 'CONFIRMED';
+
+            const formattedOrder = {
+              id: orderId,
+              orderNumber: orderId.startsWith('ORD-') ? orderId : `ORD-${orderId.slice(-6)}`,
+              customerName: parsed.customerName || parsed.customer?.name || parsed.user?.name || parsed.deliveryDetails?.name || 'Customer',
+              deliveryAddress: parsed.deliveryAddress || parsed.address || parsed.deliveryDetails?.address || 'Address Not Provided',
+              restaurantName: resolveRestaurantName(parsed),
+              totalAmount: parsed.totalAmount || parsed.total || 0,
+              paymentMethod: parsed.paymentMethod || 'ONLINE',
+              status: status,
+              createdAt: parsed.createdAt || new Date().toISOString(),
+              items: parsed.items || parsed.orderItems || [],
+            };
+
+            if (status === 'DELIVERED') {
+              completed.push(formattedOrder);
+            } else {
+              active.push(formattedOrder);
             }
-          } catch (e) {
-            console.error('Failed to parse local driver order payload:', e);
           }
+        } catch (e) {
+          console.error('Error reading real-time order payload:', e);
         }
       }
     }
 
-    setOrders(localOrders);
-    if (localOrders.length > 0) {
-      setSelectedOrder(localOrders[0]);
-    }
-  };
+    setActiveOrders(active);
+    setHistoryOrders(completed);
+
+    setSelectedOrderId((prev) => {
+      if (prev) return prev;
+      if (active.length > 0) return active[0].id;
+      if (completed.length > 0) return completed[0].id;
+      return null;
+    });
+  }, [resolveRestaurantName]);
 
   useEffect(() => {
-    fetchAssignedOrders();
-  }, []);
+    loadOrders();
+    const interval = setInterval(loadOrders, 2000);
 
-  // Filter active orders vs delivered history
-  const activeOrders = orders.filter((o) => o.status !== 'DELIVERED');
-  const historyOrders = orders.filter((o) => o.status === 'DELIVERED');
-  const displayedOrders = sidebarTab === 'ACTIVE' ? activeOrders : historyOrders;
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key && (e.key.startsWith('latest_order_') || e.key.startsWith('order_status_'))) {
+        loadOrders();
+      }
+    };
 
-  const updateLocalOrder = (orderId: string, status: OrderStatus) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`order_status_${orderId}`, status);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [loadOrders]);
+
+  // Modal Countdown Timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showOfferModal && offerTimer > 0) {
+      timer = setInterval(() => setOfferTimer((prev) => prev - 1), 1000);
+    } else if (offerTimer === 0) {
+      setShowOfferModal(false);
     }
+    return () => clearInterval(timer);
+  }, [showOfferModal, offerTimer]);
 
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status,
-              statusHistory: [
-                ...(o.statusHistory || []),
-                { status, timestamp: new Date().toLocaleTimeString() },
-              ],
-            }
-          : o
-      )
-    );
-
-    setSelectedOrder((prev) =>
-      prev && prev.id === orderId
-        ? {
-            ...prev,
-            status,
-            statusHistory: [
-              ...(prev.statusHistory || []),
-              { status, timestamp: new Date().toLocaleTimeString() },
-            ],
-          }
-        : prev
-    );
+  const handleClearHistory = () => {
+    if (typeof window === 'undefined') return;
+    historyOrders.forEach((ord) => {
+      localStorage.removeItem(`latest_order_${ord.id}`);
+      localStorage.removeItem(`order_status_${ord.id}`);
+    });
+    setHistoryOrders([]);
   };
 
-  const getNotificationText = (status: OrderStatus, orderId: string) => {
-    switch (status) {
-      case 'READY':
-        return {
-          title: 'Driver Arrived at Restaurant',
-          message: `${driverInfo.name} is here to pick up your order #${orderId}!`,
-        };
-      case 'IN_TRANSIT':
-        return {
-          title: 'Order On The Way',
-          message: `${driverInfo.name} has picked up order #${orderId} and is headed your way!`,
-        };
-      case 'DELIVERED':
-        return {
-          title: 'Order Delivered',
-          message: `${driverInfo.name} delivered your order #${orderId}. Enjoy your meal!`,
-        };
-      default:
-        return {
-          title: `Order Status: ${status.replace('_', ' ')}`,
-          message: `Your order #${orderId} status has been updated to ${status.replace('_', ' ').toLowerCase()}.`,
-        };
-    }
+  const handleUpdateStatus = (orderId: string, newStatus: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`order_status_${orderId}`, newStatus);
+    loadOrders();
   };
 
-  const handleUpdateStatus = async (newStatus: OrderStatus) => {
-    if (!selectedOrder) return;
-    setLoading(true);
-
-    const targetOrderId = selectedOrder.orderNumber || selectedOrder.id;
-
-    try {
-      await apiClient.patch(`/driver/orders/${selectedOrder.id}/status`, {
-        status: newStatus,
-      });
-      updateLocalOrder(selectedOrder.id, newStatus);
-    } catch {
-      updateLocalOrder(selectedOrder.id, newStatus);
-    } finally {
-      const notifData = getNotificationText(newStatus, targetOrderId);
-      
-      addNotification({
-        title: notifData.title,
-        message: notifData.message,
-        type: newStatus === 'DELIVERED' ? 'COMPLETION' : 'CONFIRMATION',
-        orderId: targetOrderId,
-      });
-
-      setLoading(false);
-    }
-  };
-
-  // Helper function to render explicit collection instructions for drivers
-  const renderPaymentInfoBox = (order: ExtendedOrder) => {
-    const isCOD = order.paymentMethod === 'COD';
-    const isUPI = order.paymentMethod === 'UPI';
-
-    if (isCOD) {
-      return (
-        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-xs">
-              <Banknote className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">
-                Cash On Delivery (COD)
-              </p>
-              <p className="text-xs text-amber-700 font-medium">
-                Collect payment at doorstep upon delivery
-              </p>
-            </div>
-          </div>
-          <span className="text-sm font-black text-amber-900 bg-amber-200/60 px-3 py-1.5 rounded-xl border border-amber-300/80">
-            Collect ${Number(order.totalAmount).toFixed(2)}
-          </span>
-        </div>
-      );
-    }
-
-    return (
-      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs">
-            {isUPI ? <QrCode className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
-          </div>
-          <div>
-            <p className="text-xs font-extrabold text-emerald-900 uppercase tracking-wide">
-              {isUPI ? 'Paid via UPI' : 'Paid Online (Card)'}
-            </p>
-            <p className="text-xs text-emerald-700 font-medium">
-              No cash collection required
-            </p>
-          </div>
-        </div>
-        <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-300">
-          ✓ PAID ONLINE
-        </span>
-      </div>
-    );
-  };
+  const selectedOrder =
+    activeOrders.find((o) => o.id === selectedOrderId) ||
+    historyOrders.find((o) => o.id === selectedOrderId) ||
+    activeOrders[0] ||
+    historyOrders[0];
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] py-8 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Sidebar Navigation */}
-        <div className="bg-white border border-amber-100/80 rounded-3xl p-5 shadow-xs flex flex-col">
-          <h2 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2 font-serif">
-            <Truck className="w-5 h-5 text-amber-600" /> Driver Deliveries
-          </h2>
+    <div className="min-h-screen bg-[#FAF7F2] py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
 
-          {/* Active vs History Tab Navigation */}
-          <div className="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold mb-4">
-            <button
-              onClick={() => setSidebarTab('ACTIVE')}
-              className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
-                sidebarTab === 'ACTIVE'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
+        {/* DRIVER STATUS HEADER CARD - Blue Theme */}
+        <div className="bg-white p-5 sm:p-6 rounded-3xl border border-sky-100 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span
+              className={`w-3.5 h-3.5 rounded-full ${
+                driverStatus === 'Available'
+                  ? 'bg-emerald-500 animate-pulse'
+                  : driverStatus === 'Busy'
+                  ? 'bg-amber-500'
+                  : 'bg-rose-500'
               }`}
-            >
-              Active ({activeOrders.length})
-            </button>
-            <button
-              onClick={() => setSidebarTab('HISTORY')}
-              className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
-                sidebarTab === 'HISTORY'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" /> History ({historyOrders.length})
-            </button>
-          </div>
-
-          {/* Orders List View */}
-          {displayedOrders.length === 0 ? (
-            <div className="text-center py-8 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
-              <p className="text-xs text-slate-500 font-medium">
-                {sidebarTab === 'ACTIVE'
-                  ? 'No active deliveries currently in progress.'
-                  : 'No completed delivery history found.'}
+            />
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                DRIVER STATUS
+              </p>
+              <p className="text-lg font-black text-slate-900">
+                {driverStatus === 'Available'
+                  ? 'Online • Ready for Pickups'
+                  : driverStatus === 'Busy'
+                  ? 'On Delivery • Busy'
+                  : 'Offline • Paused'}
               </p>
             </div>
-          ) : (
-            <div className="space-y-3 overflow-y-auto max-h-[600px] pr-1">
-              {displayedOrders.map((ord) => (
-                <motion.div
-                  key={ord.id}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => setSelectedOrder(ord)}
-                  className={`p-4 rounded-2xl border cursor-pointer transition ${
-                    selectedOrder?.id === ord.id
-                      ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-400/20 shadow-xs'
-                      : 'border-slate-100 hover:border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-center font-black text-slate-900 text-sm">
-                    <span>{ord.orderNumber || ord.id}</span>
-                    <span
-                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wide ${
-                        ord.status === 'DELIVERED'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      }`}
-                    >
-                      {ord.status}
-                    </span>
-                  </div>
-                  
-                  {/* List Item Details Footer */}
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 text-xs">
-                    <p className="text-slate-500 truncate max-w-[130px] font-medium">
-                      {ord.deliveryAddress || 'Address specified'}
-                    </p>
-                    {ord.paymentMethod === 'COD' ? (
-                      <span className="font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md text-[10px]">
-                        COD: ${Number(ord.totalAmount).toFixed(2)}
-                      </span>
-                    ) : (
-                      <span className="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] flex items-center gap-1">
-                        {ord.status === 'DELIVERED' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                        PAID ONLINE
-                      </span>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
+          </div>
+
+          {/* Status Controls Toggle Buttons */}
+          <div className="flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/80">
+            {(['Available', 'Busy', 'Offline'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setDriverStatus(status)}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
+                  driverStatus === status
+                    ? 'bg-sky-500 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Selected Order Details & Action Controls */}
-        <div className="md:col-span-2 bg-white border border-amber-100/80 rounded-3xl p-6 sm:p-8 shadow-xs">
-          {selectedOrder ? (
-            <div>
-              <div className="flex justify-between border-b border-slate-100 pb-4 mb-5">
-                <div>
-                  <h1 className="text-2xl font-black text-slate-900 font-serif">
-                    Order #{selectedOrder.orderNumber || selectedOrder.id}
-                  </h1>
-                  <p className="text-xs font-semibold text-slate-500 mt-1">
-                    Customer: <span className="text-slate-800">{selectedOrder.customerName || 'Customer'}</span>
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total</span>
-                  <p className="text-2xl font-black text-slate-900 font-sans">
-                    ${Number(selectedOrder.totalAmount).toFixed(2)}
-                  </p>
-                </div>
-              </div>
+        {/* MAIN DASHBOARD GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-              {/* Prominent Payment Banner */}
-              {renderPaymentInfoBox(selectedOrder)}
-
-              {/* Dynamic Driver Info Banner */}
-              <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-700 text-white font-black flex items-center justify-center text-sm shadow-xs shrink-0">
-                    {driverInfo.name[0]}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-slate-900 text-sm">{driverInfo.name}</span>
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.2 rounded-md">
-                        {driverInfo.rating}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 font-medium">
-                      {selectedOrder.status === 'READY' && `${driverInfo.name} is here to pick up your order!`}
-                      {selectedOrder.status === 'IN_TRANSIT' && `${driverInfo.name} is on the way to deliver your order.`}
-                      {selectedOrder.status === 'DELIVERED' && `${driverInfo.name} delivered this order.`}
-                      {['CONFIRMED', 'PREPARING'].includes(selectedOrder.status) && `${driverInfo.name} has been assigned to this delivery.`}
-                    </p>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">{driverInfo.vehicle}</span>
-                  </div>
-                </div>
-
-                <a
-                  href={`tel:${driverInfo.phone}`}
-                  className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold px-3 py-1.5 rounded-xl shadow-xs transition active:scale-95 shrink-0"
-                >
-                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                  Contact
-                </a>
-              </div>
-
-              <div className="space-y-3 mb-6 text-xs font-medium text-slate-700">
-                <div className="flex items-start gap-2.5">
-                  <MapPin className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                  <span>{selectedOrder.deliveryAddress}</span>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <Package className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                  <span>Restaurant: {selectedOrder.restaurantName || 'Bistro Byte Central'}</span>
-                </div>
-              </div>
-
-              {/* Status Transition Controls */}
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider mb-3">
-                  Update Delivery Status
-                </h3>
+          {/* LEFT COLUMN: DELIVERIES LIST */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="bg-white p-5 rounded-3xl border border-sky-100 shadow-xs space-y-4">
+              
+              {/* Header & Tabs */}
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-black text-slate-900 font-serif flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-sky-600" /> Deliveries
+                </h2>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {(['CONFIRMED', 'PREPARING', 'READY', 'IN_TRANSIT', 'DELIVERED'] as OrderStatus[]).map(
-                    (st) => {
-                      const Icon = STATUS_ICONS[st] || Clock;
-                      const isCurrent = selectedOrder.status === st;
-                      const animVariant = STATUS_BTN_ANIMATIONS[st] || {};
-
-                      return (
-                        <motion.button
-                          key={st}
-                          initial="initial"
-                          whileHover={!isCurrent ? "hover" : undefined}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleUpdateStatus(st)}
-                          disabled={loading || isCurrent}
-                          className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                            isCurrent
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/20 cursor-default'
-                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                          }`}
-                        >
-                          <motion.div variants={animVariant}>
-                            <Icon className={`w-4 h-4 ${isCurrent ? 'text-amber-400' : 'text-slate-500'}`} />
-                          </motion.div>
-                          <span className="text-[10px] font-extrabold uppercase tracking-wide">
-                            {st.replace('_', ' ')}
-                          </span>
-                        </motion.button>
-                      );
-                    }
-                  )}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl">
+                  <button
+                    onClick={() => setSidebarTab('ACTIVE')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      sidebarTab === 'ACTIVE'
+                        ? 'bg-white text-sky-600 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Active ({activeOrders.length})
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab('HISTORY')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      sidebarTab === 'HISTORY'
+                        ? 'bg-white text-sky-600 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <History className="w-3.5 h-3.5 inline mr-1" />
+                    ({historyOrders.length})
+                  </button>
                 </div>
+
+                {sidebarTab === 'HISTORY' && historyOrders.length > 0 && (
+                  <button
+                    onClick={handleClearHistory}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition"
+                    title="Clear History"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
+
+              {/* LIST ITEMS */}
+              <div className="space-y-3">
+                {(sidebarTab === 'ACTIVE' ? activeOrders : historyOrders).length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">
+                    <p className="text-xs font-bold">No {sidebarTab.toLowerCase()} orders right now.</p>
+                  </div>
+                ) : (
+                  (sidebarTab === 'ACTIVE' ? activeOrders : historyOrders).map((ord) => {
+                    const isSelected = selectedOrder?.id === ord.id;
+                    return (
+                      <div
+                        key={ord.id}
+                        onClick={() => setSelectedOrderId(ord.id)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-sky-50/60 border-sky-400 shadow-xs ring-2 ring-sky-400/20'
+                            : 'bg-white border-slate-100 hover:border-sky-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-black text-slate-900 text-sm">{ord.orderNumber}</span>
+                          <span
+                            className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                              ord.status === 'DELIVERED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {ord.status === 'CONFIRMED' ? 'READY FOR PICKUP' : ord.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium truncate mb-2">
+                          {ord.deliveryAddress}
+                        </p>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                          <span className="text-[10px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-md">
+                            {ord.paymentMethod === 'COD' ? 'CASH ON DELIVERY' : 'PAID ONLINE'}
+                          </span>
+                          <span className="font-black text-slate-900 text-xs">
+                            ${Number(ord.totalAmount).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
             </div>
-          ) : (
-            <p className="text-center text-slate-400 py-12 font-medium text-xs">
-              Select an order from the list to view details.
-            </p>
-          )}
+          </div>
+
+          {/* RIGHT COLUMN: ACTIVE ORDER DETAIL & PROGRESS ACTION PANEL */}
+          <div className="lg:col-span-8 space-y-6">
+            {selectedOrder ? (
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-sky-100 shadow-xs space-y-6">
+                
+                {/* Order Top Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 font-serif">
+                      Order #{selectedOrder.orderNumber}
+                    </h1>
+                    <p className="text-xs font-bold text-slate-500 mt-1">
+                      Customer: <span className="text-slate-800">{selectedOrder.customerName}</span>
+                    </p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">
+                      TOTAL AMOUNT
+                    </span>
+                    <span className="text-3xl font-black text-slate-900">
+                      ${Number(selectedOrder.totalAmount).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Badge Banner */}
+                <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-emerald-500 text-white rounded-xl">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-emerald-900">
+                        {selectedOrder.paymentMethod === 'COD' ? 'CASH ON DELIVERY' : 'PAID ONLINE'}
+                      </p>
+                      <p className="text-xs font-medium text-emerald-700">
+                        {selectedOrder.paymentMethod === 'COD'
+                          ? 'Collect payment from customer at door'
+                          : 'No payment collection needed at door'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    {selectedOrder.paymentMethod === 'COD' ? 'COLLECT CASH' : 'PAID ONLINE'}
+                  </span>
+                </div>
+
+                {/* Driver Identity Card */}
+                <div className="bg-sky-50/50 border border-sky-100 p-4 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-sky-600 text-white font-black rounded-full flex items-center justify-center text-sm shadow-xs">
+                      A
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-slate-900 flex items-center gap-2">
+                        Alex (You)
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md">
+                          4.9 ★
+                        </span>
+                      </p>
+                      <p className="text-xs font-medium text-slate-500">Order successfully assigned.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => alert('Contacting Dispatch Support...')}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition shadow-xs"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5 text-sky-600" /> Support
+                  </button>
+                </div>
+
+                {/* Pickup & Dropoff Address Section - Dynamic Real-Time Data */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-start gap-3 text-xs font-medium text-slate-700">
+                    <Store className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-900">Pickup Location:</strong> {selectedOrder.restaurantName}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 text-xs font-medium text-slate-700">
+                    <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-900">Dropoff Location:</strong> {selectedOrder.deliveryAddress}
+                    </div>
+                  </div>
+                </div>
+
+                {/* UPDATE PROGRESS ACTION BUTTONS - Standardized Blue Active Palette */}
+                <div className="pt-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    UPDATE PROGRESS (DRIVER VIEW)
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    
+                    {/* Stage 1: At Restaurant */}
+                    <button
+                      onClick={() => handleUpdateStatus(selectedOrder.id, 'AT_RESTAURANT')}
+                      className={`p-4 rounded-2xl font-black text-xs transition-all flex flex-col items-center justify-center gap-2 border ${
+                        selectedOrder.status === 'AT_RESTAURANT'
+                          ? 'bg-sky-500 text-white border-sky-600 shadow-md ring-2 ring-sky-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Store className="w-5 h-5" />
+                      <span>AT RESTAURANT (READY)</span>
+                    </button>
+
+                    {/* Stage 2: Picked Up */}
+                    <button
+                      onClick={() => handleUpdateStatus(selectedOrder.id, 'IN_TRANSIT')}
+                      className={`p-4 rounded-2xl font-black text-xs transition-all flex flex-col items-center justify-center gap-2 border ${
+                        selectedOrder.status === 'IN_TRANSIT'
+                          ? 'bg-sky-500 text-white border-sky-600 shadow-md ring-2 ring-sky-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Truck className="w-5 h-5" />
+                      <span>PICKED UP (IN TRANSIT)</span>
+                    </button>
+
+                    {/* Stage 3: Mark Delivered */}
+                    <button
+                      onClick={() => handleUpdateStatus(selectedOrder.id, 'DELIVERED')}
+                      className={`p-4 rounded-2xl font-black text-xs transition-all flex flex-col items-center justify-center gap-2 border ${
+                        selectedOrder.status === 'DELIVERED'
+                          ? 'bg-emerald-500 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <PackageCheck className="w-5 h-5" />
+                      <span>MARK DELIVERED</span>
+                    </button>
+
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div className="bg-white p-12 rounded-3xl border border-sky-100 text-center shadow-xs">
+                <Truck className="w-12 h-12 text-sky-400 mx-auto mb-3" />
+                <h3 className="text-lg font-bold text-slate-800">No Order Selected</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Select an active delivery from the left sidebar to view details.
+                </p>
+              </div>
+            )}
+          </div>
+
         </div>
 
       </div>
+
+      {/* POPUP OFFER MODAL - Styled with Driver Blue Header Accents */}
+      {showOfferModal && selectedOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-sky-100 animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Top Modal Header Badge */}
+            <div className="bg-gradient-to-r from-sky-500 to-blue-600 p-4 text-white text-center font-black text-xs tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1.5 uppercase">
+                <Sparkles className="w-4 h-4 text-amber-300" /> NEW ORDER OFFER • {offerTimer}S
+              </span>
+              <button
+                onClick={() => setShowOfferModal(false)}
+                className="p-1 hover:bg-white/20 rounded-lg transition"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-black text-slate-900 font-serif">
+                  {selectedOrder.orderNumber}
+                </h3>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Estimated Payout</span>
+                  <span className="text-2xl font-black text-emerald-600">
+                    ${Number(selectedOrder.totalAmount).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-sky-50/60 border border-sky-100 p-4 rounded-2xl space-y-2 text-xs font-medium text-slate-700">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Pickup From:</span>
+                  <span className="font-bold text-slate-900">{selectedOrder.restaurantName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Deliver To:</span>
+                  <span className="font-bold text-slate-900">{selectedOrder.deliveryAddress}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setShowOfferModal(false)}
+                  className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => {
+                    setShowOfferModal(false);
+                    alert('Offer Accepted!');
+                  }}
+                  className="flex-1 py-3 px-4 bg-sky-500 hover:bg-sky-600 text-white font-black text-xs rounded-2xl transition shadow-md"
+                >
+                  Accept Offer
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

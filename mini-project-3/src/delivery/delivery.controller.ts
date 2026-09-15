@@ -24,10 +24,41 @@ export class DeliveryController {
     return this.deliveryService.getDriverDeliveries(userId);
   }
 
+  // Alias route endpoint matching frontend: GET /driver/orders
+  @Get('driver/orders')
+  @Roles('delivery_partner', 'admin')
+  getAssignedDriverOrders(@Request() req) {
+    const userId = req.user?.userId || req.user?.sub || 'driver-1';
+    return this.deliveryService.getDriverDeliveries(userId);
+  }
+
+  // Driver offer acceptance endpoint: POST /delivery/orders/:id/accept
+  @Post('orders/:id/accept')
+  @Roles('delivery_partner', 'admin')
+  acceptDeliveryOffer(@Param('id') orderId: string, @Request() req) {
+    const driverId = req.user?.userId || req.user?.sub || 'driver-1';
+    return this.deliveryService.acceptDeliveryOffer(orderId, driverId);
+  }
+
   @Patch(':id/status')
   @Roles('delivery_partner', 'admin')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateDeliveryStatusDto) {
     return this.deliveryService.updateDeliveryStatus(id, dto.status);
+  }
+
+  // Direct order status update alias: PATCH /delivery/driver/orders/:id/status
+  @Patch('driver/orders/:id/status')
+  @Roles('delivery_partner', 'admin')
+  updateDriverOrderStatus(@Param('id') id: string, @Body('status') status: string) {
+    return this.deliveryService.updateDeliveryStatusByOrderId(id, status);
+  }
+
+  // Driver online availability status bar: PATCH /delivery/drivers/status
+  @Patch('drivers/status')
+  @Roles('delivery_partner', 'admin')
+  updateDriverAvailabilityStatus(@Request() req, @Body('status') status: 'AVAILABLE' | 'BUSY' | 'OFFLINE') {
+    const driverId = req.user?.userId || req.user?.sub || 'driver-1';
+    return this.deliveryService.updateDriverAvailability(driverId, status);
   }
 
   @Get('order/:orderId')
