@@ -1,52 +1,90 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/auth-context';
+import {
+  Search,
+  ArrowUpDown,
+  Download,
+  CheckCircle2,
+  Clock,
+  ShoppingBag,
+  RefreshCw,
+  Calendar,
+  User,
+  ChevronRight,
+  Package,
+  XCircle,
+  Utensils,
+  ChevronLeft,
+} from 'lucide-react';
 import api from '@/lib/axios';
 import Loader from '@/components/common/Loader';
 import EmptyState from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 
-export default function OrderHistoryPage() {
+export default function CustomerOrdersPage() {
   const router = useRouter();
+  const { role, user } = useAuth();
+
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  const [status, setStatus] = useState('ALL');
+  // Filters & State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [sort, setSort] = useState('desc');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Role Redirect: Ensure non-customers go to their dedicated routes
+  useEffect(() => {
+    const currentRole = role as string;
+    if (currentRole === 'DRIVER') {
+      router.replace('/driver');
+    } else if (currentRole === 'SYSTEM_ADMIN' || currentRole === 'ADMIN') {
+      router.replace('/admin/orders');
+    }
+  }, [role, router]);
+
+  const isOrderClosed = (rawStatus: string) => {
+    return ['DELIVERED', 'CANCELLED'].includes((rawStatus || '').toUpperCase());
+  };
+
   const fetchOrders = async () => {
+    setLoading(true);
+    setError(null);
+    let loadedOrders: any[] = [];
+    let apiSuccess = false;
+
     try {
-      setLoading(true);
-      setError(null);
-      
-      const res = await api.get('/orders/history', {
-        params: { status, startDate, endDate, sort, page, limit: 5 },
+      // Customer-scoped endpoint
+      const res = await api.get('/orders/my-orders', {
+        params: { startDate, endDate, sort: sortOrder, page, limit: 10 },
       });
 
-      const rawItems = Array.isArray(res.data) 
-        ? res.data 
+      const rawItems = Array.isArray(res.data)
+        ? res.data
         : res.data?.items || res.data?.orders || [];
 
       if (rawItems.length > 0) {
-        setOrders(rawItems);
+        loadedOrders = rawItems;
         setTotalPages(res.data?.totalPages || 1);
-        setLoading(false);
-        return;
+        apiSuccess = true;
       }
-    } catch (err: any) {
-      console.warn('Backend order history fetch failed, loading local order cache:', err);
+    } catch (err) {
+      console.warn('Backend fetch for customer orders failed, checking local cache:', err);
     }
 
-    // Local Storage Fallback
-    const localOrders: any[] = [];
+    // Local Storage Fallback (User Scoped)
     if (typeof window !== 'undefined') {
+      const localOrders: any[] = [];
+      const userIdentifier = (user as any)?.email || (user as any)?.id || 'Guest';
+
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('latest_order_')) {
@@ -55,217 +93,351 @@ export default function OrderHistoryPage() {
             if (raw) {
               const orderId = key.replace('latest_order_', '');
               const parsed = JSON.parse(raw);
-              localOrders.push({
-                id: orderId,
-                status: localStorage.getItem(`order_status_${orderId}`) || 'CONFIRMED',
-                createdAt: parsed.createdAt || new Date().toISOString(),
-                totalAmount: parsed.totalAmount || 0,
-                items: parsed.items || [],
-              });
+              const statusOverride = localStorage.getItem(`order_status_${orderId}`);
+
+              const belongsToUser =
+                parsed.customerEmail === userIdentifier ||
+                parsed.customerName === userIdentifier ||
+                !parsed.customerEmail;
+
+              if (belongsToUser) {
+                localOrders.push({
+                  id: orderId,
+                  orderNumber: parsed.orderNumber || orderId,
+                  customerName: parsed.customerName || '',
+                  deliveryAddress: parsed.deliveryAddress || parsed.address || '',
+                  status: statusOverride || parsed.status || 'CONFIRMED',
+                  createdAt: parsed.createdAt || new Date().toISOString(),
+                  totalAmount: Number(parsed.totalAmount || parsed.total || 0),
+                  items: parsed.items || [],
+                });
+              }
             }
           } catch (e) {
             console.error('Failed parsing local order item', e);
           }
         }
       }
+
+      const orderMap = new Map<string, any>();
+      [...loadedOrders, ...localOrders].forEach((o) => {
+        const cleanId = String(o.id || o._id || '');
+        if (!orderMap.has(cleanId)) {
+          orderMap.set(cleanId, o);
+        } else {
+          const existing = orderMap.get(cleanId);
+          const localStatus = localStorage.getItem(`order_status_${cleanId}`);
+          if (localStatus) existing.status = localStatus;
+        }
+      });
+
+      loadedOrders = Array.from(orderMap.values());
     }
 
-    let filteredLocal = status === 'ALL' 
-      ? localOrders 
-      : localOrders.filter(o => o.status === status);
-
-    if (startDate) {
-      filteredLocal = filteredLocal.filter(o => new Date(o.createdAt) >= new Date(startDate));
-    }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filteredLocal = filteredLocal.filter(o => new Date(o.createdAt) <= end);
+    if (!apiSuccess && loadedOrders.length === 0) {
+      setError('Unable to sync live server orders. Displaying cached orders.');
     }
 
-    filteredLocal.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      return sort === 'desc' ? timeB - timeA : timeA - timeB;
-    });
-
-    setOrders(filteredLocal);
-    setTotalPages(1);
+    setOrders(loadedOrders);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchOrders();
-  }, [status, startDate, endDate, sort, page]);
+  }, [role, startDate, endDate, sortOrder, page]);
 
-  const handleCancelOrder = async (e: React.MouseEvent, orderId: string) => {
-    e.stopPropagation();
+  const metrics = useMemo(() => {
+    const totalSpent = orders.reduce((sum, o) => sum + Number(o.totalAmount || o.total || 0), 0);
+    const active = orders.filter((o) => !isOrderClosed(o.status)).length;
+    const completed = orders.filter((o) => isOrderClosed(o.status)).length;
+    return { totalSpent, count: orders.length, active, completed };
+  }, [orders]);
 
-    if (!confirm('Are you sure you want to cancel this order?')) return;
+  const filteredOrders = useMemo(() => {
+    return orders
+      .filter((order) => {
+        const id = String(order.id || order._id || '');
+        const orderNum = String(order.orderNumber || id);
+        const query = searchQuery.toLowerCase();
 
-    setCancellingId(orderId);
-    try {
-      await api.patch(`/orders/${orderId}/cancel`);
-    } catch (err) {
-      console.warn('Backend cancel API unavailable, updating local status:', err);
-    } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`order_status_${orderId}`, 'CANCELLED');
-      }
+        const matchesQuery = orderNum.toLowerCase().includes(query);
+        if (!matchesQuery) return false;
 
-      setOrders(prev =>
-        prev.map(o => (String(o.id || o._id) === orderId ? { ...o, status: 'CANCELLED' } : o))
-      );
+        const currentStatus = (order.status || '').toUpperCase();
+        if (statusFilter === 'OPEN' && isOrderClosed(currentStatus)) return false;
+        if (statusFilter === 'CLOSED' && !isOrderClosed(currentStatus)) return false;
+        if (
+          statusFilter !== 'ALL' &&
+          statusFilter !== 'OPEN' &&
+          statusFilter !== 'CLOSED' &&
+          currentStatus !== statusFilter
+        ) {
+          return false;
+        }
 
-      setCancellingId(null);
-    }
+        if (startDate && new Date(order.createdAt) < new Date(startDate)) return false;
+        if (endDate && new Date(order.createdAt) > new Date(endDate + 'T23:59:59')) return false;
+
+        return true;
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      });
+  }, [orders, searchQuery, statusFilter, startDate, endDate, sortOrder]);
+
+  const downloadCSVReport = () => {
+    const headers = ['Order ID,Total ($),Status,Date,Items'];
+    const rows = filteredOrders.map((o) => {
+      const id = String(o.id || o._id || '');
+      const displayId = o.orderNumber || id;
+      const itemSummary = (o.items || [])
+        .map((i: any) => `${i.quantity || 1}x ${i.name || i.menuItem?.name || i.title || 'Item'}`)
+        .join('; ');
+
+      return `"${displayId}",${Number(o.totalAmount || o.total || 0).toFixed(2)},"${o.status}","${new Date(
+        o.createdAt
+      ).toLocaleString()}","${itemSummary}"`;
+    });
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `My_Orders_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  const getStatusBadgeStyle = (statusName: string) => {
-    switch (statusName) {
-      case 'PENDING':
-        return 'bg-sky-100 text-sky-800 border-sky-300';
-      case 'CONFIRMED':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      case 'PREPARING':
-        return 'bg-purple-100 text-purple-800 border-purple-300';
-      case 'READY':
-        return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'DELIVERED':
-        return 'bg-teal-100 text-teal-800 border-teal-300';
-      case 'CANCELLED':
-        return 'bg-rose-100 text-rose-800 border-rose-300';
-      default:
-        return 'bg-slate-100 text-slate-800 border-slate-300';
-    }
-  };
-
-  if (loading) return <Loader label="Loading history..." />;
-  if (error) return <ErrorState message={error} onRetry={fetchOrders} />;
+  if (loading && orders.length === 0) return <Loader label="Loading your order history..." />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-100 via-pink-50 to-amber-100 p-4 sm:p-8 relative overflow-hidden">
-      
-      {/* Decorative Blur Orbs */}
-      <div className="absolute top-0 -left-20 w-96 h-96 bg-purple-300/40 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 -right-20 w-96 h-96 bg-amber-300/40 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-[#FAF7F2] text-slate-800 pb-16 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
 
-      <div className="max-w-5xl mx-auto space-y-6 relative z-10">
-        
-        {/* Vibrantly Colored Banner Header */}
-        <div className="bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 rounded-3xl p-6 text-white shadow-xl flex items-center justify-between border border-white/20">
+        {/* Customer Header Banner */}
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-6 md:p-8 text-white shadow-xl shadow-orange-500/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
-            <h1 className="text-3xl font-black tracking-wide drop-shadow-md">Customer Order History</h1>
-            <p className="text-xs font-medium text-pink-100 mt-1">Manage, filter, and track your active or past orders</p>
+            <div className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase mb-2">
+              <User className="w-3.5 h-3.5" /> CUSTOMER VIEW
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black font-serif tracking-tight">My Order History</h1>
+            <p className="text-amber-100 text-xs md:text-sm max-w-xl mt-1 font-medium">
+              Track your ongoing food deliveries and review past receipt details.
+            </p>
           </div>
-          <div className="hidden sm:block text-4xl">
-            🍕
-          </div>
-        </div>
 
-        {/* Filters Container */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white/70 backdrop-blur-lg p-5 rounded-3xl border border-white/60 shadow-lg">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-indigo-900">Status</label>
-            <select 
-              value={status} 
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full p-2.5 border border-indigo-200/60 rounded-2xl text-xs font-bold bg-white/90 text-slate-800 focus:ring-2 focus:ring-rose-400 focus:outline-none shadow-xs cursor-pointer"
+          <div className="flex items-center gap-3">
+            <button
+              onClick={downloadCSVReport}
+              className="bg-white text-slate-900 hover:bg-slate-50 font-black px-5 py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="PENDING">Pending</option>
-              <option value="CONFIRMED">Confirmed</option>
-              <option value="PREPARING">Preparing</option>
-              <option value="READY">Ready</option>
-              <option value="DELIVERED">Delivered</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-indigo-900">Start Date</label>
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={(e) => setStartDate(e.target.value)} 
-              className="w-full p-2 border border-indigo-200/60 rounded-2xl text-xs font-bold bg-white/90 text-slate-800 focus:ring-2 focus:ring-rose-400 focus:outline-none shadow-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-indigo-900">End Date</label>
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={(e) => setEndDate(e.target.value)} 
-              className="w-full p-2 border border-indigo-200/60 rounded-2xl text-xs font-bold bg-white/90 text-slate-800 focus:ring-2 focus:ring-rose-400 focus:outline-none shadow-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-indigo-900">Sort</label>
-            <button 
-              onClick={() => setSort(sort === 'desc' ? 'asc' : 'desc')}
-              className="w-full p-2.5 bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white rounded-2xl text-xs font-extrabold shadow-md transition active:scale-95 cursor-pointer"
+              <Download className="w-4 h-4 text-orange-600" /> Export CSV
+            </button>
+            <button
+              onClick={fetchOrders}
+              className="bg-white/15 hover:bg-white/25 text-white font-bold p-3 rounded-2xl transition backdrop-blur-md cursor-pointer active:scale-95"
+              title="Refresh order status"
             >
-              {sort === 'desc' ? '⏳ Newest First' : '⌛ Oldest First'}
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Orders List */}
-        {orders.length === 0 ? (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl p-8 border border-white/60 shadow-lg">
-            <EmptyState title="No orders found" description="Adjust your filters to see past orders." />
+        {/* Metrics Overview */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-amber-100/80 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Spent</p>
+              <p className="text-2xl font-black text-slate-900 mt-1">${metrics.totalSpent.toFixed(2)}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center">
+              <ShoppingBag className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-amber-100/80 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Orders</p>
+              <p className="text-2xl font-black text-slate-900 mt-1">{metrics.count}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center">
+              <Package className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-amber-100/80 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Deliveries</p>
+              <p className="text-2xl font-black text-orange-600 mt-1">{metrics.active}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-100 text-orange-600 flex items-center justify-center">
+              <Clock className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-amber-100/80 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Delivered</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">{metrics.completed}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+
+        {error && <ErrorState message={error} onRetry={fetchOrders} />}
+
+        {/* Toolbar */}
+        <div className="bg-white p-5 rounded-3xl border border-amber-100/80 shadow-xs space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by Order #..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto text-xs font-bold">
+              <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 border border-slate-200 rounded-2xl">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-[10px] uppercase font-black text-slate-400">From</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-transparent focus:outline-none text-slate-700 cursor-pointer"
+                />
+                <span className="text-[10px] uppercase font-black text-slate-400 ml-1">To</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-transparent focus:outline-none text-slate-700 cursor-pointer"
+                />
+              </div>
+
+              <button
+                onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl transition flex items-center gap-1.5 cursor-pointer shadow-xs font-black uppercase text-[11px] tracking-wider active:scale-95"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 text-xs font-bold">
+            <span className="text-slate-400 mr-2 text-[11px] font-black uppercase tracking-wider">Filter:</span>
+            {['ALL', 'OPEN', 'CLOSED', 'DELIVERED', 'CANCELLED'].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-4 py-2 rounded-xl transition cursor-pointer text-xs font-black ${
+                  statusFilter === st
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Customer Order Cards Grid */}
+        {filteredOrders.length === 0 ? (
+          <div className="bg-white p-12 rounded-3xl border border-amber-100 text-center shadow-xs">
+            <Utensils className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+            <EmptyState title="No orders found" description="Place your first order or adjust your active filters." />
           </div>
         ) : (
-          <div className="space-y-4">
-            {orders.map((order: any) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {filteredOrders.map((order) => {
               const orderId = String(order.id || order._id || '');
-              const displayId = orderId.startsWith('ORD-') ? orderId : `ORD-${orderId.slice(-6)}`;
-              const price = Number(order.totalAmount || order.total || 0);
-              const currentStatus = order.status || 'CONFIRMED';
-              
-              const canCancel = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'].includes(currentStatus);
+              const displayId = order.orderNumber || orderId;
+              const currentStatus = (order.status || 'CONFIRMED').toUpperCase();
+              const closed = isOrderClosed(currentStatus);
 
               return (
-                <div 
-                  key={orderId} 
+                <div
+                  key={orderId}
                   onClick={() => router.push(`/orders/${orderId}`)}
-                  className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/80 hover:border-pink-300 shadow-md hover:shadow-2xl transition-all duration-300 flex justify-between items-center cursor-pointer group transform hover:-translate-y-1"
+                  className="bg-white rounded-3xl border-2 border-amber-100/90 hover:border-amber-300 p-6 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between gap-4 group"
                 >
-                  <div className="space-y-1">
-                    <p className="font-black text-slate-900 group-hover:text-rose-600 transition-colors text-lg">
-                      Order #{displayId}
-                    </p>
-                    <p className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                      <span>📅</span> {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB') : 'Recent'}
-                    </p>
+                  {/* Card Header */}
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+                    <div>
+                      <span className="font-black text-slate-900 text-lg font-serif group-hover:text-amber-600 transition-colors block">
+                        {displayId}
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5 mt-0.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Placed on {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'Recent'}
+                      </span>
+                    </div>
+
+                    <div>
+                      {closed ? (
+                        <span
+                          className={`font-black px-3 py-1 rounded-full text-[10px] uppercase inline-flex items-center gap-1 border ${
+                            currentStatus === 'CANCELLED'
+                              ? 'bg-red-50 text-red-600 border-red-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}
+                        >
+                          {currentStatus === 'CANCELLED' ? (
+                            <XCircle className="w-3 h-3" />
+                          ) : (
+                            <CheckCircle2 className="w-3 h-3" />
+                          )}
+                          {currentStatus}
+                        </span>
+                      ) : (
+                        <span className="bg-amber-50 text-amber-700 border border-amber-200 font-black px-3 py-1 rounded-full text-[10px] uppercase inline-flex items-center gap-1 animate-pulse">
+                          <Clock className="w-3 h-3" /> {currentStatus}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="text-right flex flex-col items-end space-y-2">
-                    {/* Dynamic Status Badge with Red Cancel Hover */}
-                    {canCancel ? (
-                      <button
-                        onClick={(e) => handleCancelOrder(e, orderId)}
-                        disabled={cancellingId === orderId}
-                        title="Click to cancel order"
-                        className={`px-3 py-1 text-xs font-extrabold rounded-full border shadow-xs transition-all duration-300 group/btn cursor-pointer ${getStatusBadgeStyle(currentStatus)} hover:bg-gradient-to-r hover:from-rose-600 hover:to-red-600 hover:text-white hover:border-red-700 hover:shadow-md`}
-                      >
-                        <span className="group-hover/btn:hidden">{currentStatus}</span>
-                        <span className="hidden group-hover/btn:inline-flex items-center gap-1">
-                          ✖ {cancellingId === orderId ? 'Cancelling...' : 'Cancel Order'}
-                        </span>
-                      </button>
+                  {/* Dynamic Item List */}
+                  <div className="space-y-1.5 py-1">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Order Items:</p>
+                    {order.items && order.items.length > 0 ? (
+                      <div className="space-y-1">
+                        {order.items.map((it: any, idx: number) => (
+                          <p key={idx} className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            {it.quantity || 1}x {it.name || it.menuItem?.name || it.title || 'Item'}
+                          </p>
+                        ))}
+                      </div>
                     ) : (
-                      <span className={`px-3 py-1 text-xs font-extrabold rounded-full border ${getStatusBadgeStyle(currentStatus)}`}>
-                        {currentStatus}
-                      </span>
+                      <p className="text-xs font-medium italic text-slate-400">No items specified</p>
                     )}
+                  </div>
 
-                    <p className="font-black text-xl text-slate-900 tracking-tight">
-                      ${price.toFixed(2)}
-                    </p>
+                  {/* Summary Footer */}
+                  <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-black block uppercase tracking-wider">
+                        Total Price
+                      </span>
+                      <span className="text-xl font-black text-slate-900">
+                        ${Number(order.totalAmount || order.total || 0).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs font-black text-amber-600 bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-2xl group-hover:bg-amber-100 transition-all">
+                      View Receipt <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
                 </div>
               );
@@ -274,23 +446,23 @@ export default function OrderHistoryPage() {
         )}
 
         {/* Pagination Bar */}
-        <div className="flex justify-between items-center bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-lg">
-          <button 
-            disabled={page === 1} 
+        <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-amber-100/80 shadow-xs">
+          <button
+            disabled={page === 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="px-4 py-2 rounded-2xl border border-slate-200 disabled:opacity-40 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-50 transition active:scale-95 shadow-xs cursor-pointer"
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition disabled:opacity-40 cursor-pointer active:scale-95"
           >
-            ← Previous
+            <ChevronLeft className="w-4 h-4" /> Previous
           </button>
-          <span className="text-xs font-extrabold text-indigo-900 bg-pink-100/80 px-4 py-1.5 rounded-full border border-pink-200">
+          <span className="text-xs font-black text-slate-700 bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-xl">
             Page {page} of {totalPages}
           </span>
-          <button 
-            disabled={page >= totalPages} 
+          <button
+            disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
-            className="px-4 py-2 rounded-2xl border border-slate-200 disabled:opacity-40 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-50 transition active:scale-95 shadow-xs cursor-pointer"
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition disabled:opacity-40 cursor-pointer active:scale-95"
           >
-            Next →
+            Next <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 

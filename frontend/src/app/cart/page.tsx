@@ -1,21 +1,37 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useCart } from '@/context/cart-context';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Trash2, Plus, Minus, ShoppingBag, Sparkles, ArrowLeft, Utensils } from 'lucide-react';
+import { Trash2, Plus, Minus, ShoppingBag, Sparkles, ArrowLeft, Utensils, Loader2 } from 'lucide-react';
 
 export default function CartPage() {
-  const { cart, items = [], restaurantName, updateQuantity, removeFromCart, clearCart, subtotal = 0 } = useCart();
+  const { cart, items = [], restaurantName, updateQuantity, removeFromCart, clearCart, subtotal = 0, isLoading } = useCart();
+  const [isHydrated, setIsHydrated] = useState(false);
 
-  // Flexible array detection to handle flat state or nested cart structures
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
   const cartItems = items.length > 0 ? items : cart?.items || [];
 
-  // Helper to safely format prices without runtime crashes
   const formatPrice = (amount: any) => {
     const num = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
     return num.toFixed(2);
   };
+
+  // Render loading state while context hydrater initializes
+  if (!isHydrated || isLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+          <p className="text-xs font-semibold text-slate-500">Loading your cart...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Empty Cart State
   if (!cartItems || cartItems.length === 0) {
@@ -70,7 +86,7 @@ export default function CartPage() {
           
           <button
             onClick={clearCart}
-            className="text-xs font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-3.5 py-1.5 rounded-xl border border-rose-200/80 transition shadow-xs active:scale-95"
+            className="text-xs font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-3.5 py-1.5 rounded-xl border border-rose-200/80 transition shadow-xs active:scale-95 cursor-pointer"
           >
             Clear Cart
           </button>
@@ -79,7 +95,6 @@ export default function CartPage() {
         {/* Cart Items Card */}
         <div className="bg-white rounded-3xl border border-amber-100/80 shadow-sm divide-y divide-slate-100 overflow-hidden">
           {cartItems.map((rawItem: any, index: number) => {
-            // Normalizes data access whether item is flat or wrapped inside menuItem
             const item = rawItem.menuItem ? rawItem.menuItem : rawItem;
             const itemId = item?.id || item?._id || rawItem?.menuItemId || `item-${index}`;
             const itemName = item?.name || 'Menu Item';
@@ -97,7 +112,6 @@ export default function CartPage() {
                 whileHover={{ backgroundColor: 'rgba(254, 243, 199, 0.25)' }}
                 className="p-4 sm:p-5 flex items-center justify-between gap-4 transition-colors"
               >
-                {/* Left Section: Cartoonized Animated Thumbnail + Item Info */}
                 <div className="flex items-center gap-4 flex-1">
                   <div className="relative shrink-0">
                     {itemImage ? (
@@ -143,9 +157,7 @@ export default function CartPage() {
                   </div>
                 </div>
 
-                {/* Right Section: Quantity Badges & Remove Button */}
                 <div className="flex items-center gap-3 shrink-0">
-                  {/* Quantity Adjustment Badge */}
                   <div className="flex items-center bg-slate-100/80 rounded-2xl border border-slate-200/80 p-1">
                     <motion.button
                       whileTap={{ scale: 0.8 }}
@@ -156,7 +168,7 @@ export default function CartPage() {
                           updateQuantity(itemId, quantity - 1);
                         }
                       }}
-                      className="w-7 h-7 rounded-xl bg-white shadow-xs text-slate-600 hover:text-amber-600 hover:bg-amber-50 flex items-center justify-center font-bold transition"
+                      className="w-7 h-7 rounded-xl bg-white shadow-xs text-slate-600 hover:text-amber-600 hover:bg-amber-50 flex items-center justify-center font-bold transition cursor-pointer"
                       aria-label="Decrease quantity"
                     >
                       <Minus className="w-3.5 h-3.5 text-slate-600" />
@@ -175,19 +187,18 @@ export default function CartPage() {
                     <motion.button
                       whileTap={{ scale: 0.8 }}
                       onClick={() => updateQuantity(itemId, quantity + 1)}
-                      className="w-7 h-7 rounded-xl bg-white shadow-xs text-slate-600 hover:text-amber-600 hover:bg-amber-50 flex items-center justify-center font-bold transition"
+                      className="w-7 h-7 rounded-xl bg-white shadow-xs text-slate-600 hover:text-amber-600 hover:bg-amber-50 flex items-center justify-center font-bold transition cursor-pointer"
                       aria-label="Increase quantity"
                     >
                       <Plus className="w-3.5 h-3.5 text-slate-600" />
                     </motion.button>
                   </div>
 
-                  {/* Delete Item Button */}
                   <motion.button
                     whileTap={{ scale: 0.8 }}
                     whileHover={{ scale: 1.15, rotate: -5 }}
                     onClick={() => removeFromCart(itemId)}
-                    className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition"
+                    className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                     aria-label="Remove item"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -198,7 +209,7 @@ export default function CartPage() {
           })}
         </div>
 
-        {/* Order Subtotal & Vibrant Checkout Card */}
+        {/* Order Subtotal & Checkout Card */}
         <motion.div 
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
