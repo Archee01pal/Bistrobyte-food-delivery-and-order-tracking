@@ -4,10 +4,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ShieldCheck, CreditCard, CheckCircle2, ArrowLeft, Banknote } from 'lucide-react';
+import { useCart } from '@/context/cart-context'; // Ensure path matches your project structure
+
+export const dynamic = 'force-dynamic';
 
 export default function PaymentGatewayPage() {
   const params = useParams();
   const router = useRouter();
+  const { clearCart } = useCart();
 
   const rawId = params?.id || params?.orderId;
   const id = Array.isArray(rawId) ? rawId[0] : (rawId as string);
@@ -62,6 +66,9 @@ export default function PaymentGatewayPage() {
           const existingOrders = JSON.parse(localStorage.getItem('all_orders') || '[]');
           const filtered = existingOrders.filter((o: any) => o.id !== formattedId);
           localStorage.setItem('all_orders', JSON.stringify([newOrderObj, ...filtered]));
+
+          // Clear cart state & sync with backend
+          clearCart();
         }
 
         setIsSuccess(true);
@@ -73,7 +80,7 @@ export default function PaymentGatewayPage() {
 
       return () => clearTimeout(timer);
     }
-  }, [isProcessing, id, router, selectedMethod]);
+  }, [isProcessing, id, router, selectedMethod, clearCart]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
