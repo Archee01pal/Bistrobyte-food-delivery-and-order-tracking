@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ShieldCheck, CreditCard, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, CreditCard, CheckCircle2, ArrowLeft, Banknote } from 'lucide-react';
 
 export default function PaymentGatewayPage() {
   const params = useParams();
@@ -52,7 +52,8 @@ export default function PaymentGatewayPage() {
             deliveryAddress: orderDetails?.deliveryAddress || orderDetails?.address || '',
             totalAmount: Number(orderDetails?.totalAmount || orderDetails?.total || 0),
             status: 'CONFIRMED',
-            paymentStatus: 'SUCCESSFUL',
+            paymentStatus: selectedMethod === 'COD' ? 'PENDING' : 'SUCCESSFUL',
+            paymentMethod: selectedMethod,
             items: orderDetails?.items || orderDetails?.cartItems || [],
             createdAt: orderDetails?.createdAt || new Date().toISOString()
           };
@@ -72,7 +73,7 @@ export default function PaymentGatewayPage() {
 
       return () => clearTimeout(timer);
     }
-  }, [isProcessing, id, router]);
+  }, [isProcessing, id, router, selectedMethod]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -97,6 +98,7 @@ export default function PaymentGatewayPage() {
             </div>
 
             <div className="space-y-3">
+              {/* Card Option */}
               <label
                 onClick={() => setSelectedMethod('CARD')}
                 className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition ${
@@ -113,6 +115,7 @@ export default function PaymentGatewayPage() {
                 <input type="radio" checked={selectedMethod === 'CARD'} readOnly />
               </label>
 
+              {/* UPI Option */}
               <label
                 onClick={() => setSelectedMethod('UPI')}
                 className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition ${
@@ -128,13 +131,30 @@ export default function PaymentGatewayPage() {
                 </div>
                 <input type="radio" checked={selectedMethod === 'UPI'} readOnly />
               </label>
+
+              {/* COD Option */}
+              <label
+                onClick={() => setSelectedMethod('COD')}
+                className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition ${
+                  selectedMethod === 'COD' ? 'border-amber-500 bg-amber-50/30' : 'border-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Banknote className="w-5 h-5 text-amber-600" />
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">Cash on Delivery (COD)</p>
+                    <p className="text-[11px] text-slate-400">Pay cash upon delivery</p>
+                  </div>
+                </div>
+                <input type="radio" checked={selectedMethod === 'COD'} readOnly />
+              </label>
             </div>
 
             <button
               onClick={() => setIsProcessing(true)}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-2xl shadow-lg shadow-emerald-600/20 text-sm transition active:scale-98 cursor-pointer"
             >
-              Pay Successfully with {selectedMethod}
+              {selectedMethod === 'COD' ? 'Confirm Order with COD' : `Pay Successfully with ${selectedMethod}`}
             </button>
           </div>
         ) : isSuccess ? (
@@ -144,7 +164,9 @@ export default function PaymentGatewayPage() {
             className="text-center py-8 space-y-3"
           >
             <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto animate-bounce" />
-            <h2 className="text-2xl font-black text-slate-900">Payment Successful!</h2>
+            <h2 className="text-2xl font-black text-slate-900">
+              {selectedMethod === 'COD' ? 'Order Confirmed!' : 'Payment Successful!'}
+            </h2>
             <p className="text-xs text-slate-500">Routing to Kitchen & Order Tracking...</p>
           </motion.div>
         ) : (
@@ -154,7 +176,9 @@ export default function PaymentGatewayPage() {
               <CreditCard className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800 font-serif">Directing to Payment Gateway</h2>
+              <h2 className="text-lg font-bold text-slate-800 font-serif">
+                {selectedMethod === 'COD' ? 'Processing Cash on Delivery Order' : 'Directing to Payment Gateway'}
+              </h2>
               <p className="text-xs text-slate-400 mt-1">
                 Securing transaction for Order ID <span className="font-bold">{id}</span>...
               </p>
